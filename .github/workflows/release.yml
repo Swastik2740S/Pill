@@ -1,0 +1,63 @@
+name: Release
+
+# Push a tag like v1.0.0 (or run this workflow by hand with a version) and GitHub builds
+# the installers and portable zips for x64 and ARM64 and attaches them to a Release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, for example 1.0.1'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $v = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.version }}' } else { '${{ github.ref_name }}'.TrimStart('v') }
+          "value=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build, zip and make installers
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.value }}'
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($arch in 'x64', 'arm64') {
+            $out = "publish\win-$arch"
+            # Self-contained: people don't need to install .NET.
+            dotnet publish src\DynamicIsland -c Release -r "win-$arch" --self-contained true `
+              -p:PublishReadyToRun=true -p:Version=$v -o $out --nologo
+            if ($LASTEXITCODE -ne 0) { throw "Build failed for $arch" }
+            Compress-Archive -Path "$out\*" -DestinationPath "dist\DynamicIsland-$v-$arch-portable.zip"
+            & $iscc /Qp "/DAppVersion=$v" "/DArch=$arch" "/DSourceDir=..\$out" `
+              "/DRepoUrl=${{ github.server_url }}/${{ github.repository }}" installer\DynamicIsland.iss
+            if ($LASTEXITCODE -ne 0) { throw "Installer failed for $arch" }
+          }
+          Copy-Item installer\Output\*.exe dist\
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          name: Dynamic Island ${{ steps.version.outputs.value }}
+          generate_release_notes: true
+          files: dist/*

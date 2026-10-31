@@ -1,0 +1,464 @@
+<UserControl x:Class="DynamicIsland.Views.ExpandedView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:DynamicIsland.Controls"
+             Width="400">
+    <!-- The dashboard: a switcher row on top, one card below it. Card heights are fixed on
+         purpose: ExpandedView.Configure computes the island height from them, so the spring
+         knows its target before layout runs. -->
+    <StackPanel Margin="18,12,18,16">
+
+        <!-- ======================================================== Switcher row -->
+        <ItemsControl x:Name="Switcher" Height="32" HorizontalAlignment="Center" Focusable="False"
+                      ItemsSource="{Binding Dashboard.Tabs}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Button Style="{StaticResource TabButton}" Click="Tab_Click" ToolTip="{Binding Label}">
+                        <Grid Width="22" Height="22">
+                            <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="15"
+                                       Foreground="{Binding Accent}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding ShowGlyph, Converter={StaticResource BoolToVis}}"/>
+                            <Image Source="{Binding Icon}" Width="20" Height="20" Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="{Binding ShowIcon, Converter={StaticResource BoolToVis}}"/>
+                            <Border CornerRadius="6" Visibility="{Binding ShowArt, Converter={StaticResource BoolToVis}}">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{Binding Art}" Stretch="UniformToFill"/>
+                                </Border.Background>
+                            </Border>
+                            <Border MinWidth="14" Height="14" CornerRadius="7" Padding="3,0" Background="#FFFF3B30"
+                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-5,-9,0"
+                                    IsHitTestVisible="False"
+                                    Visibility="{Binding HasBadge, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding BadgeText}" FontSize="8.5" FontWeight="Bold" Foreground="White"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"/>
+                            </Border>
+                        </Grid>
+                    </Button>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ======================================================== Cards (exactly one visible) -->
+        <Grid x:Name="CardHost" Margin="0,10,0,0">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="CardSlide"/>
+            </Grid.RenderTransform>
+
+            <!-- ==================== Home: clock, battery, paused music tile, quick timers -->
+            <Grid x:Name="HomeCard" Height="96">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock x:Name="ClockText" Margin="0,-5,0,0" Text="00:00"
+                               FontFamily="{StaticResource DisplayFont}" FontSize="30" FontWeight="SemiBold"
+                               Foreground="{StaticResource PrimaryText}" Typography.NumeralAlignment="Tabular"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="DateText" Text="Today" FontSize="12.5" Foreground="{StaticResource SecondaryText}"
+                                   VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center"
+                                    Visibility="{Binding Power.HasBattery, Converter={StaticResource BoolToVis}}">
+                            <controls:BatteryGlyph Width="22" Height="11" VerticalAlignment="Center"
+                                                   Level="{Binding Power.Level}" IsCharging="{Binding Power.IsCharging}"/>
+                            <TextBlock Text="{Binding Power.Percent, StringFormat={}{0}%}" FontSize="12.5" Margin="5,0,0,0"
+                                       Foreground="{StaticResource SecondaryText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Paused music, shrunk to a tile: the play button resumes, the art reopens the full player -->
+                <Grid x:Name="PausedMediaTile" Grid.Column="1" Width="50" Height="50" VerticalAlignment="Top"
+                      Margin="0,0,4,0" Visibility="Collapsed">
+                    <Border CornerRadius="13" Background="{StaticResource ArtworkPlaceholder}" Cursor="Hand"
+                            ToolTip="Show player" RenderTransformOrigin="0.5,0.5"
+                            RenderOptions.BitmapScalingMode="HighQuality"
+                            MouseLeftButtonDown="PausedArt_MouseDown" MouseLeftButtonUp="PausedArt_MouseUp"
+                            MouseLeave="PausedArt_MouseLeave">
+                        <Border.RenderTransform>
+                            <ScaleTransform x:Name="PausedArtScale" ScaleX="1" ScaleY="1"/>
+                        </Border.RenderTransform>
+                        <Grid>
+                            <TextBlock Text="&#xE8D6;" FontFamily="{StaticResource IconFont}" FontSize="18"
+                                       Foreground="{StaticResource TertiaryText}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Border CornerRadius="13">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{Binding Media.Artwork}" Stretch="UniformToFill"/>
+                                </Border.Background>
+                            </Border>
+                            <Border CornerRadius="13" Background="#40000000"/>
+                        </Grid>
+                    </Border>
+                    <Button Style="{StaticResource CircleButton}" Width="24" Height="24" Background="#F2FFFFFF"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" Click="ResumePlay_Click" ToolTip="Play">
+                        <Path Data="{StaticResource PlayGeometry}" Fill="Black" Stretch="Uniform" Width="9" Height="10" Margin="1,0,0,0"/>
+                    </Button>
+                    <Image Source="{Binding Media.AppIcon}" Width="16" Height="16" Margin="0,0,-5,-5"
+                           HorizontalAlignment="Right" VerticalAlignment="Bottom" IsHitTestVisible="False"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                </Grid>
+
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal">
+                    <Button Style="{StaticResource ChipButton}" Click="Stopwatch_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE916;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                       Foreground="{StaticResource TimerOrange}" VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock Text="Stopwatch" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ChipButton}" Tag="1" Content="1 min" Click="Countdown_Click"/>
+                    <Button Style="{StaticResource ChipButton}" Tag="5" Content="5 min" Click="Countdown_Click"/>
+                    <Button Style="{StaticResource ChipButton}" Tag="25" Content="25 min" Click="Countdown_Click"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ==================== Music: player, seek, volume, shrink to bubble -->
+            <Grid x:Name="MusicCard" Height="158" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="60"/>
+                    <RowDefinition Height="30"/>
+                    <RowDefinition Height="36"/>
+                    <RowDefinition Height="32"/>
+                </Grid.RowDefinitions>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="60"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Click the art to jump to the player -->
+                    <Border x:Name="ArtworkButton" CornerRadius="14" Background="{StaticResource ArtworkPlaceholder}"
+                            RenderOptions.BitmapScalingMode="HighQuality" Cursor="Hand" ToolTip="{Binding Media.OpenHint}"
+                            RenderTransformOrigin="0.5,0.5"
+                            MouseLeftButtonDown="Artwork_MouseDown" MouseLeftButtonUp="Artwork_MouseUp"
+                            MouseLeave="Artwork_MouseLeave">
+                        <Border.RenderTransform>
+                            <ScaleTransform x:Name="ArtworkScale" ScaleX="1" ScaleY="1"/>
+                        </Border.RenderTransform>
+                        <Grid>
+                            <TextBlock Text="&#xE8D6;" FontFamily="{StaticResource IconFont}" FontSize="22"
+                                       Foreground="{StaticResource TertiaryText}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Border CornerRadius="14">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{Binding Media.Artwork}" Stretch="UniformToFill"/>
+                                </Border.Background>
+                            </Border>
+                            <!-- Which app is playing: its real icon as a small badge on the art -->
+                            <Image Source="{Binding Media.AppIcon}" Width="20" Height="20" Margin="0,0,-6,-6"
+                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </Grid>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Margin="14,0,10,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Media.Title}" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{StaticResource PrimaryText}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Media.Artist}" FontSize="13" Margin="0,1,0,0"
+                                   Foreground="{StaticResource SecondaryText}" TextTrimming="CharacterEllipsis"/>
+                        <!-- Where it is playing: "JioHotstar · Edge", "Spotify" -->
+                        <TextBlock Text="{Binding Media.SourceLabel}" FontSize="11" Margin="0,1,0,0"
+                                   Foreground="{StaticResource TertiaryText}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <controls:AudioBars x:Name="Bars" Grid.Column="2" Width="22" Height="18"
+                                        VerticalAlignment="Top" Margin="0,6,0,0"
+                                        BarBrush="{Binding Media.AccentBrush}"/>
+                </Grid>
+
+                <Grid Grid.Row="1" VerticalAlignment="Center"
+                      Visibility="{Binding Media.HasTimeline, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="42"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="42"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Media.PositionText}" FontSize="11" VerticalAlignment="Center"
+                               Foreground="{StaticResource SecondaryText}" Typography.NumeralAlignment="Tabular"/>
+                    <controls:SlimSlider x:Name="SeekSlider" Grid.Column="1" Height="18" Margin="4,0"
+                                         VerticalAlignment="Center" ToolTip="Drag to seek"
+                                         Value="{Binding Media.Progress, Mode=OneWay}"
+                                         IsInteractive="{Binding Media.CanSeek, Mode=OneWay}"
+                                         TrackBrush="{StaticResource TrackFill}" Fill="{StaticResource PrimaryText}"/>
+                    <TextBlock Grid.Column="2" Text="{Binding Media.RemainingText}" FontSize="11"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Foreground="{StaticResource SecondaryText}" Typography.NumeralAlignment="Tabular"/>
+                </Grid>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Style="{StaticResource IconButton}" Width="44" Height="36" Click="Previous_Click"
+                            IsEnabled="{Binding Media.CanSkipPrevious}">
+                        <Path Data="{StaticResource PreviousGeometry}" Fill="White" Stretch="Uniform" Width="24" Height="15"/>
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" Width="48" Height="36" Margin="20,0" Click="PlayPause_Click">
+                        <Path Fill="White" Stretch="Uniform" Width="20" Height="22">
+                            <Path.Style>
+                                <Style TargetType="Path">
+                                    <Setter Property="Data" Value="{StaticResource PlayGeometry}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Media.IsPlaying}" Value="True">
+                                            <Setter Property="Data" Value="{StaticResource PauseGeometry}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
+                    </Button>
+                    <Button Style="{StaticResource IconButton}" Width="44" Height="36" Click="Next_Click"
+                            IsEnabled="{Binding Media.CanSkipNext}">
+                        <Path Data="{StaticResource NextGeometry}" Fill="White" Stretch="Uniform" Width="24" Height="15"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Volume (system master), mute, and shrink the music into a bubble -->
+                <Grid Grid.Row="3" VerticalAlignment="Bottom" Height="28">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Style="{StaticResource IconButton}" Width="28" Height="28" Click="Mute_Click"
+                            IsEnabled="{Binding Audio.HasDevice}">
+                        <TextBlock FontFamily="{StaticResource IconFont}" FontSize="13">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="&#xE767;"/>
+                                    <Setter Property="Foreground" Value="{StaticResource SecondaryText}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Audio.IsMuted}" Value="True">
+                                            <Setter Property="Text" Value="&#xE74F;"/>
+                                            <Setter Property="Foreground" Value="#FFFF453A"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
+                    <controls:SlimSlider x:Name="VolumeSlider" Grid.Column="1" Height="18" Margin="6,0"
+                                         VerticalAlignment="Center"
+                                         Value="{Binding Audio.Volume, Mode=OneWay}"
+                                         IsInteractive="{Binding Audio.HasDevice, Mode=OneWay}"
+                                         TrackBrush="{StaticResource TrackFill}" Fill="{StaticResource PrimaryText}">
+                        <controls:SlimSlider.Style>
+                            <Style TargetType="controls:SlimSlider">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Audio.IsMuted}" Value="True">
+                                        <Setter Property="Opacity" Value="0.4"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </controls:SlimSlider.Style>
+                    </controls:SlimSlider>
+                    <!-- More than one player or tab with media: pick which one the card controls -->
+                    <ItemsControl Grid.Column="2" ItemsSource="{Binding Media.Sessions}" Focusable="False"
+                                  VerticalAlignment="Center" Margin="2,0,2,0"
+                                  Visibility="{Binding Media.HasMultipleSessions, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource SessionButton}" Click="Session_Click" ToolTip="{Binding Tooltip}">
+                                    <Grid Width="18" Height="18">
+                                        <Border CornerRadius="4.5"
+                                                Visibility="{Binding ShowThumbnail, Converter={StaticResource BoolToVis}}">
+                                            <Border.Background>
+                                                <ImageBrush ImageSource="{Binding Thumbnail}" Stretch="UniformToFill"/>
+                                            </Border.Background>
+                                        </Border>
+                                        <Image Source="{Binding Icon}" Width="16" Height="16" Stretch="Uniform"
+                                               RenderOptions.BitmapScalingMode="HighQuality"
+                                               Visibility="{Binding ShowIcon, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button x:Name="MinimizeButton" Grid.Column="3" Style="{StaticResource IconButton}" Width="28" Height="28"
+                            Click="Minimize_Click" ToolTip="Shrink to a bubble">
+                        <TextBlock x:Name="MinimizeGlyph" Text="&#xE73F;" FontFamily="{StaticResource IconFont}" FontSize="12"
+                                   Foreground="{StaticResource SecondaryText}"/>
+                    </Button>
+                </Grid>
+            </Grid>
+
+            <!-- ==================== Timer -->
+            <Grid x:Name="TimerCard" Height="52">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Grid Width="38" Height="38" VerticalAlignment="Center">
+                    <controls:ProgressRing Progress="{Binding Timers.Progress}" Thickness="3"
+                                           Stroke="{StaticResource TimerOrange}" TrackBrush="{StaticResource TimerOrangeFill}"/>
+                    <TextBlock Text="&#xE916;" FontFamily="{StaticResource IconFont}" FontSize="14"
+                               Foreground="{StaticResource TimerOrange}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+
+                <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Timers.Label}" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource TimerOrange}" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Timers.StateText}" FontSize="11.5"
+                               Foreground="{StaticResource SecondaryText}" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <TextBlock Grid.Column="2" Text="{Binding Timers.DetailText}" Margin="0,0,12,0" VerticalAlignment="Center"
+                           FontFamily="{StaticResource DisplayFont}" FontSize="28" FontWeight="SemiBold"
+                           Foreground="{StaticResource TimerOrange}" Typography.NumeralAlignment="Tabular"/>
+
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource CircleButton}" Background="{StaticResource TimerOrangeFill}"
+                            Click="TimerPause_Click">
+                        <Path Fill="{StaticResource TimerOrange}" Stretch="Uniform" Width="12" Height="13">
+                            <Path.Style>
+                                <Style TargetType="Path">
+                                    <Setter Property="Data" Value="{StaticResource PlayGeometry}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Timers.IsRunning}" Value="True">
+                                            <Setter Property="Data" Value="{StaticResource PauseGeometry}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
+                    </Button>
+                    <Button Style="{StaticResource CircleButton}" Margin="8,0,0,0" Click="TimerStop_Click">
+                        <Path Data="{StaticResource CloseGeometry}" Stroke="White" StrokeThickness="2"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="Uniform" Width="10" Height="10"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- ==================== One app's notifications (DataContext: the selected tab's group) -->
+            <StackPanel x:Name="AppCard" Visibility="Collapsed" DataContext="{Binding Dashboard.Selected.Group}">
+                <Grid Height="28">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Image Source="{Binding Icon}" Width="20" Height="20" Stretch="Uniform" VerticalAlignment="Center"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding AppName, Mode=OneWay}" FontSize="13" FontWeight="SemiBold"
+                             Foreground="{StaticResource PrimaryText}"/>
+                        <Run Text="{Binding CountText, Mode=OneWay}" FontSize="12"
+                             Foreground="{StaticResource TertiaryText}"/>
+                    </TextBlock>
+                    <Button Grid.Column="2" Style="{StaticResource TextButton}" Content="Open" Click="OpenApp_Click"/>
+                    <Button Grid.Column="3" Style="{StaticResource TextButton}" Content="Clear" Click="ClearApp_Click"/>
+                </Grid>
+
+                <ItemsControl ItemsSource="{Binding TopItems}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource RowButton}" Height="48" Margin="0,4,0,0" Click="OpenItem_Click"
+                                    ToolTip="Open">
+                                <Grid Margin="12,0,4,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}" FontSize="12.5" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource PrimaryText}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Body}" FontSize="11.5" Margin="0,1,0,0"
+                                                   Foreground="{StaticResource SecondaryText}" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding TimeText, Mode=OneWay}" FontSize="11" Margin="8,0,4,0"
+                                               Foreground="{StaticResource TertiaryText}" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Width="28" Height="28"
+                                            Click="DismissItem_Click" ToolTip="Dismiss">
+                                        <Path Data="{StaticResource CloseGeometry}" Stroke="{StaticResource SecondaryText}"
+                                              StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                              Stretch="Uniform" Width="8" Height="8"/>
+                                    </Button>
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- ==================== History: what arrived lately, kept locally -->
+            <Grid x:Name="HistoryCard" Height="236" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="24"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="Recent notifications" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Foreground="{StaticResource SecondaryText}"/>
+
+                <ScrollViewer Grid.Row="1" Margin="0,6,0,0" Focusable="False" PanningMode="VerticalOnly"
+                              VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Dashboard.History}" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="22"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Image Source="{Binding Icon}" Width="18" Height="18" Stretch="Uniform"
+                                           VerticalAlignment="Top" Margin="0,1,0,0"
+                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <StackPanel Grid.Column="1" Margin="8,0,8,0">
+                                        <TextBlock TextTrimming="CharacterEllipsis" FontSize="12">
+                                            <Run Text="{Binding App, Mode=OneWay}" FontWeight="SemiBold"
+                                                 Foreground="{StaticResource PrimaryText}"/>
+                                            <Run Text="{Binding Title, Mode=OneWay}" Foreground="{StaticResource SecondaryText}"/>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Body}" FontSize="11.5" Margin="0,1,0,0"
+                                                   Foreground="{StaticResource SecondaryText}" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding TimeText}" FontSize="11" VerticalAlignment="Top"
+                                               Margin="0,1,0,0" Foreground="{StaticResource TertiaryText}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <TextBlock Grid.Row="1" Text="Nothing yet. Notifications you receive will collect here."
+                           FontSize="12" Foreground="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Dashboard.HasHistory}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+        </Grid>
+    </StackPanel>
+</UserControl>

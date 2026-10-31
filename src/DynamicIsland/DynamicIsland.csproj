@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 10.0.19041 (Windows 10 2004) is the floor for the WinRT media, power and device APIs we use -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DynamicIsland</RootNamespace>
+    <AssemblyName>DynamicIsland</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Release builds get their version from the git tag (see .github/workflows/release.yml) -->
+    <Version>1.0.0</Version>
+    <Product>Dynamic Island for Windows</Product>
+    <Description>An iPhone style Dynamic Island for Windows</Description>
+    <Authors>Swastik Verma</Authors>
+    <Copyright>Copyright (c) 2026 Swastik Verma. MIT License.</Copyright>
+    <ApplicationIcon>Assets\DynamicIsland.ico</ApplicationIcon>
+
+    <!-- Footprint tuning: a tiny always-on UI does not need a background GC thread -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Lets the project build on non-Windows CI machines too -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core Audio (volume notifications + peak meter). Only the WASAPI part of NAudio. -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+</Project>
