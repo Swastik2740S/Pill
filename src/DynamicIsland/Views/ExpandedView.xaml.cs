@@ -785,7 +785,11 @@ public partial class ExpandedView : UserControl
         }
     }
 
-    private void DarkTile_Click(object sender, RoutedEventArgs e) => State?.Controls.ToggleDarkMode();
+    private void DarkTile_Click(object sender, RoutedEventArgs e)
+    {
+        State?.SetExpanded(false); // Windows Settings comes forward
+        State?.Controls.OpenDarkModeSettings();
+    }
 
     // Right click a round toggle for its Windows page (and not the island's own menu).
     private void WifiTile_RightClick(object sender, MouseButtonEventArgs e) => OpenPage(e, "networks");

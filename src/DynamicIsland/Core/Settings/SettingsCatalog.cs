@@ -299,11 +299,11 @@ public static class SettingsCatalog
                 Section("Dynamic Island",
                     Info("upd-version", "Installed version", () => updates.CurrentText, "version about"),
                     Info("upd-status", "Status", () => updates.StatusText, "update new version latest"),
-                    new SettingItem("upd-install", SettingKind.Action, "Download and install")
+                    new SettingItem("upd-install", SettingKind.Action, "Get the new version")
                     {
-                        Description = "Gets the installer from GitHub and restarts the island on the new version. Your settings stay.",
-                        ActionLabel = "Install",
-                        Run = () => _ = updates.DownloadAndInstallAsync(),
+                        Description = "Downloads the installer in your browser. Open it when it finishes: it updates the island in place and keeps your settings.",
+                        ActionLabel = "Download",
+                        Run = updates.Download,
                         Unavailable = () => updates.InstallUnavailable,
                         Keywords = "update upgrade download new version",
                     },

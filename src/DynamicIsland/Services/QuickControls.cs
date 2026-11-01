@@ -34,7 +34,8 @@ public sealed class AudioEndpoint : ObservableObject
 ///                         stable since Windows 7, the same call the Windows sound flyout makes)
 ///   Microphone mute       Core Audio
 ///   Brightness            WMI monitor brightness (laptop screens)
-///   Dark mode             the Personalize registry values plus a settings broadcast
+///   Dark mode             shown from the Personalize values (read only); the tile opens
+///                         Windows' colour settings, so Windows itself makes the change
 ///   Do not disturb        the island's own: messages still arrive as bubbles, but don't pop up
 ///
 /// Anything Windows refuses falls back to opening the matching Windows Settings page.
@@ -468,24 +469,14 @@ public sealed class QuickControls : ObservableObject
 
     // ------------------------------------------------------------ dark mode
 
-    public void ToggleDarkMode()
+    /// <summary>
+    /// Opens Windows' colour settings, where light or dark is one click. The island only reads
+    /// the current mode; it never writes Windows' theme settings itself.
+    /// </summary>
+    public void OpenDarkModeSettings()
     {
-        bool dark = !DarkMode;
-        try
-        {
-            using var key = Registry.CurrentUser.CreateSubKey(PersonalizeKey);
-            key.SetValue("AppsUseLightTheme", dark ? 0 : 1, RegistryValueKind.DWord);
-            key.SetValue("SystemUsesLightTheme", dark ? 0 : 1, RegistryValueKind.DWord);
-            DarkMode = dark;
-            Log.Info($"Quick controls: dark mode {(dark ? "on" : "off")}");
-            // Tell running apps and the taskbar; slow or hung windows are skipped.
-            Task.Run(() => SendMessageTimeout(new IntPtr(0xFFFF), 0x001A, IntPtr.Zero, "ImmersiveColorSet", 0x0002, 300, out _));
-        }
-        catch (Exception ex)
-        {
-            Log.Warn("Quick controls: switching dark mode failed", ex);
-            SettingsLinks.Open("colors");
-        }
+        Log.Info("Quick controls: opened Windows colour settings for dark mode");
+        SettingsLinks.Open("colors");
     }
 
     private static bool ReadDarkMode()
@@ -527,8 +518,4 @@ public sealed class QuickControls : ObservableObject
         [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int role);
         [PreserveSig] int SetEndpointVisibility([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int visible);
     }
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wParam, string lParam,
-        uint flags, uint timeoutMs, out IntPtr result);
 }

@@ -186,10 +186,9 @@ public partial class MainWindow : Window
         }));
 
         // Updates: a banner when a new version is found, the Settings tab badge, live status rows.
-        _state.Updates.RequestQuit = Close;
         _state.Updates.UpdateFound += version => _state.ShowToast(new ToastContent(ToastKind.Update, $"Update available: {version}")
         {
-            Subtitle = "Click to install",
+            Subtitle = "Click to get it",
             Glyph = "\uE896",
             Accent = Palette.Blue,
             Width = 330,

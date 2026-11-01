@@ -1,11 +1,8 @@
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Threading;
 using DynamicIsland.Core;
-using Microsoft.Win32;
-using Microsoft.Win32.SafeHandles;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 
@@ -21,17 +18,12 @@ namespace DynamicIsland.Services;
 ///                checked every 1.5 s on a background thread (a handful of cheap calls).
 ///                Muted microphones and virtual or loopback inputs (Virtual Audio Cable, VB-Cable,
 ///                Voicemeeter, Stereo Mix) never count: nothing real is being heard through them.
-///   Fallback     The capability consent store in the registry (LastUsedTimeStart/Stop), which
-///                older Windows versions keep live. Newer Windows 11 builds stopped updating it
-///                live, so it only ever adds to what the two sources above report.
+///   Names        The app's process name, made readable ("WindowsCamera" shows as "Windows
+///                Camera"). Other processes are never opened or read.
 /// </summary>
 public sealed class PrivacyMonitor : ObservableObject, IDisposable
 {
-    private const string StoreKey = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
     private const int MicPollMs = 1500;
-    private const int RegistryEveryMs = 15_000;
-    private const uint REG_NOTIFY_CHANGE_NAME = 0x1;
-    private const uint REG_NOTIFY_CHANGE_LAST_SET = 0x4;
 
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly ManualResetEvent _stop = new(false);
@@ -46,8 +38,8 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
     private bool _loggedAudioError;
     private readonly HashSet<string> _loggedSkips = new(StringComparer.OrdinalIgnoreCase);
 
-    // True while at least one physical microphone is present and not muted. The sensor monitor and
-    // the registry cannot say which input an app records from, so they only count while this holds.
+    // True while at least one physical microphone is present and not muted. The sensor monitor
+    // cannot say which input an app records from, so its mic reports only count while this holds.
     private bool _realMicLive;
 
     private static readonly PropertyKey EnumeratorNameKey = new(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), 24);
@@ -61,8 +53,6 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
     private IReadOnlyList<string> _sensorCamera = Array.Empty<string>();
     private IReadOnlyList<string> _sensorMic = Array.Empty<string>();
     private IReadOnlyList<string> _audioMic = Array.Empty<string>();
-    private IReadOnlyList<string> _registryCamera = Array.Empty<string>();
-    private IReadOnlyList<string> _registryMic = Array.Empty<string>();
 
     private IReadOnlyList<string> _cameraApps = Array.Empty<string>();
     private IReadOnlyList<string> _micApps = Array.Empty<string>();
@@ -209,7 +199,7 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
         return read(buffer, (uint)buffer.Capacity) >= 0 ? buffer.ToString() : "";
     }
 
-    // ------------------------------------------------------------ microphone and registry (background thread)
+    // ------------------------------------------------------------ microphone (background thread)
 
     private void Watch()
     {
@@ -223,53 +213,20 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
             Log.Warn("Privacy indicator: Core Audio unavailable for the microphone check", ex);
         }
 
-        using var cameraKey = OpenStore("webcam");
-        using var micKey = OpenStore("microphone");
-        using var cameraChanged = new AutoResetEvent(false);
-        using var micChanged = new AutoResetEvent(false);
-        Arm(cameraKey, cameraChanged);
-        Arm(micKey, micChanged);
-
-        var handles = new WaitHandle[] { _stop, cameraChanged, micChanged };
-        long nextRegistry = 0;
         while (true)
         {
             var (audio, realMicLive) = ActiveRecorders(enumerator);
-            long now = Environment.TickCount64;
-            IReadOnlyList<string>? registryCamera = null;
-            IReadOnlyList<string>? registryMic = null;
-            if (now >= nextRegistry)
-            {
-                nextRegistry = now + RegistryEveryMs;
-                (registryCamera, registryMic) = ScanRegistry();
-            }
             _dispatcher.InvokeAsync(() =>
             {
                 _audioMic = audio;
                 _realMicLive = realMicLive;
-                if (registryCamera is not null && registryMic is not null)
-                {
-                    _registryCamera = registryCamera;
-                    _registryMic = registryMic;
-                }
                 Merge();
             });
 
-            int signaled = WaitHandle.WaitAny(handles, MicPollMs);
-            if (signaled == 0)
+            if (_stop.WaitOne(MicPollMs))
             {
                 enumerator?.Dispose();
                 return;
-            }
-            if (signaled == 1)
-            {
-                Arm(cameraKey, cameraChanged);
-                nextRegistry = 0;
-            }
-            else if (signaled == 2)
-            {
-                Arm(micKey, micChanged);
-                nextRegistry = 0;
             }
         }
     }
@@ -387,145 +344,40 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
         return VirtualMarkers.Any(m => names.Contains(m, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static RegistryKey? OpenStore(string capability)
-    {
-        try
-        {
-            return Registry.CurrentUser.OpenSubKey($@"{StoreKey}\{capability}");
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static void Arm(RegistryKey? key, AutoResetEvent changed)
-    {
-        if (key is null)
-        {
-            return;
-        }
-        try
-        {
-            RegNotifyChangeKeyValue(key.Handle, true, REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, changed.SafeWaitHandle, true);
-        }
-        catch
-        {
-            // The poll still runs.
-        }
-    }
-
-    private static (IReadOnlyList<string> Camera, IReadOnlyList<string> Mic) ScanRegistry()
-    {
-        var running = RunningProcessNames();
-        return (StoreInUse("webcam", running), StoreInUse("microphone", running));
-    }
-
-    private static List<string> StoreInUse(string capability, HashSet<string> running)
-    {
-        var apps = new List<string>();
-        foreach (var hive in new[] { Registry.CurrentUser, Registry.LocalMachine })
-        {
-            try
-            {
-                using var root = hive.OpenSubKey($@"{StoreKey}\{capability}");
-                if (root is null)
-                {
-                    continue;
-                }
-                foreach (string name in root.GetSubKeyNames())
-                {
-                    try
-                    {
-                        using var sub = root.OpenSubKey(name);
-                        if (sub is null)
-                        {
-                            continue;
-                        }
-                        if (name == "NonPackaged")
-                        {
-                            foreach (string exe in sub.GetSubKeyNames())
-                            {
-                                try
-                                {
-                                    using var entry = sub.OpenSubKey(exe);
-                                    string process = Path.GetFileNameWithoutExtension(exe.Replace('#', '\\'));
-                                    if (entry is not null && IsActive(entry) && running.Contains(process))
-                                    {
-                                        AddOnce(apps, Pretty(process));
-                                    }
-                                }
-                                catch
-                                {
-                                    // An entry we may not read: skip it, keep going.
-                                }
-                            }
-                        }
-                        else if (IsActive(sub))
-                        {
-                            AddOnce(apps, PackageName(name));
-                        }
-                    }
-                    catch
-                    {
-                        // Skip unreadable entries (common under HKLM).
-                    }
-                }
-            }
-            catch
-            {
-                // A whole hive we may not read.
-            }
-        }
-        return apps;
-    }
-
-    private static bool IsActive(RegistryKey key) =>
-        key.GetValue("LastUsedTimeStop") is long stop && stop == 0
-        && key.GetValue("LastUsedTimeStart") is long start && start > 0;
-
-    private static HashSet<string> RunningProcessNames()
-    {
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var process in Process.GetProcesses())
-        {
-            try
-            {
-                names.Add(process.ProcessName);
-            }
-            catch
-            {
-                // Exited while listing.
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        }
-        return names;
-    }
-
     // ------------------------------------------------------------ names
 
+    // Process names that read badly as they are.
+    private static readonly Dictionary<string, string> KnownNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["WindowsCamera"] = "Windows Camera",
+        ["msedge"] = "Microsoft Edge",
+        ["msedgewebview2"] = "Microsoft Edge",
+        ["chrome"] = "Google Chrome",
+        ["firefox"] = "Firefox",
+        ["brave"] = "Brave",
+        ["opera"] = "Opera",
+        ["ms-teams"] = "Microsoft Teams",
+        ["Teams"] = "Microsoft Teams",
+        ["Zoom"] = "Zoom",
+        ["Discord"] = "Discord",
+        ["obs64"] = "OBS Studio",
+        ["SoundRecorder"] = "Sound Recorder",
+        ["VoiceRecorder"] = "Voice Recorder",
+        ["WhatsApp"] = "WhatsApp",
+        ["Telegram"] = "Telegram",
+        ["slack"] = "Slack",
+        ["python"] = "Python",
+        ["pythonw"] = "Python",
+    };
+
+    /// <summary>A readable name from the process name alone (no other process is opened or read).</summary>
     private static string ProcessLabel(int pid)
     {
         try
         {
             using var process = Process.GetProcessById(pid);
             string name = process.ProcessName;
-            try
-            {
-                string? description = process.MainModule?.FileVersionInfo.FileDescription;
-                if (!string.IsNullOrWhiteSpace(description) && description.Length <= 40)
-                {
-                    return description.Trim(); // "Microsoft Edge", "Zoom Workplace"
-                }
-            }
-            catch
-            {
-                // Protected process: the process name is fine.
-            }
-            return Pretty(name);
+            return KnownNames.TryGetValue(name, out string? known) ? known : Pretty(name);
         }
         catch
         {
@@ -533,21 +385,25 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>"Microsoft.WindowsCamera_8wekyb3d8bbwe" → the Start menu name when known, else "WindowsCamera".</summary>
-    private static string PackageName(string family)
+    /// <summary>"WindowsCamera" → "Windows Camera", "spotify" → "Spotify".</summary>
+    private static string Pretty(string process)
     {
-        string? shown = AppIconProvider.DisplayName(family + "!App");
-        if (!string.IsNullOrWhiteSpace(shown))
+        if (process.Length == 0)
         {
-            return shown;
+            return "An app";
         }
-        string name = family.Split('_')[0];
-        int dot = name.LastIndexOf('.');
-        return dot >= 0 && dot < name.Length - 1 ? name[(dot + 1)..] : name;
+        var text = new StringBuilder(process.Length + 4);
+        for (int i = 0; i < process.Length; i++)
+        {
+            char c = process[i];
+            if (i > 0 && char.IsUpper(c) && char.IsLower(process[i - 1]))
+            {
+                text.Append(' ');
+            }
+            text.Append(i == 0 ? char.ToUpperInvariant(c) : c);
+        }
+        return text.ToString();
     }
-
-    private static string Pretty(string process) =>
-        process.Length == 0 ? "An app" : char.ToUpperInvariant(process[0]) + process[1..];
 
     private static void AddOnce(List<string> list, string name)
     {
@@ -561,10 +417,10 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
 
     private void Merge()
     {
-        var camera = _sensorCamera.Concat(_registryCamera).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var camera = _sensorCamera.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         // With every real microphone muted (or only virtual inputs present) nothing can be heard,
-        // so the sensor monitor and the registry are not allowed to light the mic mark either.
-        var mic = (_realMicLive ? _audioMic.Concat(_sensorMic).Concat(_registryMic) : _audioMic)
+        // so the sensor monitor is not allowed to light the mic mark either.
+        var mic = (_realMicLive ? _audioMic.Concat(_sensorMic) : _audioMic)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (camera.SequenceEqual(_cameraApps) && mic.SequenceEqual(_micApps))
         {
@@ -667,8 +523,4 @@ public sealed class PrivacyMonitor : ObservableObject, IDisposable
 
     [DllImport("mfplat.dll")]
     private static extern int MFShutdown();
-
-    [DllImport("advapi32.dll")]
-    private static extern int RegNotifyChangeKeyValue(SafeRegistryHandle key, bool watchSubtree, uint filter,
-        SafeWaitHandle changed, bool asynchronous);
 }

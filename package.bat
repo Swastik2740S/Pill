@@ -4,7 +4,7 @@ cd /d "%~dp0"
 rem Builds what a release contains: a self-contained portable zip, and Setup.exe if Inno Setup is installed.
 rem Usage: package.bat [version]     (GitHub builds releases automatically from tags; this is for local checks.)
 set "VERSION=%~1"
-if "%VERSION%"=="" set "VERSION=2.0.0"
+if "%VERSION%"=="" set "VERSION=2.0.1"
 set "RID=win-x64"
 set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
 

@@ -24,7 +24,7 @@ It installs for your account only, so no administrator rights are needed, and .N
 ## What it does
 
 * **Home widgets:** a large clock card, a battery ring, the music you paused (or your notifications), and a dock of 4 to 6 quick apps you pick in Settings, each on a tile tinted with the app's own colour.
-* **Quick controls** without opening Windows Settings: Wi-Fi, Bluetooth, island Do not disturb, dark mode, volume and brightness sliders, switching the speaker or microphone, mic mute, and shortcuts to the pages Windows keeps to itself.
+* **Quick controls** without opening Windows Settings: Wi-Fi, Bluetooth, island Do not disturb, volume and brightness sliders, switching the speaker or microphone, mic mute, and shortcuts to the pages Windows keeps to itself (dark mode, for example, opens Windows' colour settings).
 * **Now Playing** for Spotify, YouTube, YouTube Music, JioHotstar, Netflix, Prime Video, VLC and anything else that uses Windows media controls: artwork, title, source, a draggable progress bar, play, pause, skip, volume, and a waveform tinted with the album colour.
 * **Several players at once.** Other apps playing in the background are listed under the player; click one and it rises into the main spot. Skipping a track never closes the player while the app loads the next song.
 * **Back to the source.** Clicking the artwork takes you to the exact app, window or browser tab that is playing.
@@ -34,7 +34,7 @@ It installs for your account only, so no administrator rights are needed, and .N
 * **System events:** volume, charger plugged in, low battery, Bluetooth headphones connecting.
 * **Dashboard:** colourful tabs (Home, Controls, Music, Timer while one runs, Notifications, Settings) with one card at a time. It reopens on the tab you left, and on Music whenever something is playing.
 * **Settings inside the island:** searchable, full height, with real system information and controls, and links to the right Windows Settings page for anything Windows doesn't let apps change.
-* **Updates in one click.** The island checks GitHub for a new version and shows a banner; Settings › Updates downloads and installs it and restarts the island.
+* **Update alerts.** The island checks GitHub for a new version, shows a banner, and Settings › Updates gets you the installer.
 * **Stays out of your way:** it never takes focus, hides during fullscreen games and videos, and tucks into a thin click-through line when a maximized window (like your browser's tabs) sits under it. Rest the pointer on that line and it swells, then opens.
 
 ## Using it
@@ -65,7 +65,7 @@ Everything stays on your PC. There are no accounts and no analytics.
 
 ## Updating
 
-From 2.0 on, the island updates itself: when a new version is out, a banner appears; click it (or open Settings › Updates) and choose **Install**. It downloads the installer for your PC from the release, checks it against the release, and restarts on the new version. Your settings stay. Version 1.0 has no updater, so install 2.0 once from the [latest release](../../releases/latest).
+From 2.0 on, the island tells you when a new version is out: a banner appears and the Settings tab gets a badge. Click the banner (or open Settings › Updates) and choose **Download**. Your browser downloads the installer for your PC; open it and it updates the island in place, keeping your settings. The island never downloads or runs programs itself. Version 1.0 has no update check, so install the latest version once from the [latest release](../../releases/latest).
 
 ## Uninstall
 

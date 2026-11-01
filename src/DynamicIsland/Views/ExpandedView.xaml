@@ -578,7 +578,7 @@
                     </StackPanel>
                     <StackPanel HorizontalAlignment="Center">
                         <Button Style="{StaticResource RoundToggle}" Tag="{Binding Controls.DarkMode}" Click="DarkTile_Click"
-                                HorizontalAlignment="Center" ToolTip="Windows dark mode">
+                                HorizontalAlignment="Center" ToolTip="Dark mode: opens Windows colour settings">
                             <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}" FontSize="17" Foreground="White"/>
                         </Button>
                         <TextBlock Text="Dark mode" FontSize="10.5" Margin="0,5,0,0" MaxWidth="72" HorizontalAlignment="Center"
