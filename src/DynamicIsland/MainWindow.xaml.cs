@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private readonly BluetoothService _bluetooth;
     private readonly NotificationService _notifications;
     private readonly FullscreenWatcher _fullscreen;
+    private readonly ClockAppWatcher _clockWatcher;
     private readonly ActivityManager _activities;
     private readonly NotificationManager _notificationManager;
     private readonly IslandState _state;
@@ -53,6 +54,31 @@ public partial class MainWindow : Window
     private const int EdgeTickMs = 70;
     private const int EdgeHoldMs = 420;
     private const int RevealGraceMs = 700;
+
+    // Approach and dwell: the visible bar itself is the target. The closer the pointer, the more
+    // the bar swells (purely visual, it stays click-through); resting on it fills it up, then opens.
+    private const int FastTickMs = 16;            // cursor check rate while the pointer is near the bar
+    private const int DwellMs = 260;              // slow rest on the bar that counts as "open it"
+    private const double StillSpeed = 320;        // DIPs per second; faster passes never count as intent
+    private const double ApproachRadius = 30;     // DIPs around the bar where it starts to react
+    private const double HitPadX = 7;             // DIPs of slack beside the bar
+    private const double HitPadBottom = 3;        // DIPs of slack below the bar
+    private const double GrowHeight = 6;          // how much taller the bar gets when fully primed
+    private readonly Spring _approach;            // 0 = resting, 1 = pointer on the bar
+    private double _growWidth = 14;               // how much wider it gets (bar 14, plain line 20)
+
+    // Privacy dots inside the island.
+    private const double DotSize = 6;
+    private const double DotGap = 4;
+    private const double DotContentGap = 3;       // between the dots and the pill's own content
+    private const double PrivacyBarWidth = 30;    // tucked with nothing else to show: a slim bar for the dots
+    private bool _privacyShown;
+    private bool _approachEngaged;
+    private int _dwellMs;
+    private double _dwellProgress;
+    private long _lastEdgeTickMs;
+    private NativeMethods.CursorPoint _lastPointer;
+
     private readonly CoverWatcher _cover;
     private readonly DispatcherTimer _edgeWatch;
     private int _edgeHoldMs;
@@ -124,6 +150,16 @@ public partial class MainWindow : Window
         _activities = new ActivityManager();
         _notificationManager = new NotificationManager(_notifications, _activities);
         _state = new IslandState(_media, _timers, _power, _audio, _bluetooth, _activities, _notificationManager);
+        _state.QuickApps.Load(_settings);
+        _state.Privacy.PropertyChanged += (_, e) =>
+        {
+            // AnyInUse is raised last on every change, after both flags hold their new values.
+            if (e.PropertyName == nameof(PrivacyMonitor.AnyInUse))
+            {
+                UpdatePrivacyDots();
+            }
+        };
+        _clockWatcher = new ClockAppWatcher(Dispatcher, _timers);
         DataContext = _state;
 
         _settingsModel = new SettingsModel(SettingsCatalog.Build(new SettingsContext
@@ -141,9 +177,39 @@ public partial class MainWindow : Window
                 _settings.Save();
                 UpdateTuck();
             },
+            GetAutoUpdate = () => _settings.CheckForUpdates,
+            SetAutoUpdate = on =>
+            {
+                _settings.CheckForUpdates = on;
+                _settings.Save();
+            },
         }));
+
+        // Updates: a banner when a new version is found, the Settings tab badge, live status rows.
+        _state.Updates.RequestQuit = Close;
+        _state.Updates.UpdateFound += version => _state.ShowToast(new ToastContent(ToastKind.Update, $"Update available: {version}")
+        {
+            Subtitle = "Click to install",
+            Glyph = "\uE896",
+            Accent = Palette.Blue,
+            Width = 330,
+            Duration = TimeSpan.FromSeconds(6),
+        });
+        _state.Updates.PropertyChanged += (_, e) =>
+        {
+            QueueSettingsRefresh();
+            if (e.PropertyName == nameof(UpdateService.IsUpdateAvailable))
+            {
+                _state.Recompute(); // the Settings tab badge
+            }
+        };
         SettingsPane.DataContext = _settingsModel;
+        // The pane always fills the Settings panel exactly (no empty band if the panel size changes).
+        SettingsPane.Width = IslandMetrics.SettingsWidth;
+        SettingsPane.Height = IslandMetrics.SettingsHeight;
         SettingsPane.CloseRequested += back => _state.CloseSettings(back);
+        SettingsPane.SetTabs(_state.Dashboard.Tabs);
+        SettingsPane.TabRequested += key => _state.LeaveSettingsTo(key);
         _settingsTick = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(2) };
         _settingsTick.Tick += (_, _) => RefreshSettings();
         _audio.PropertyChanged += (_, _) => QueueSettingsRefresh();
@@ -177,12 +243,14 @@ public partial class MainWindow : Window
         _radius = _springs.Create(IslandMetrics.IdleHeight / 2, 0.45, 0.9, 0.05);
         _scale = _springs.Create(1, 0.3, 0.6, 0.0005);
         _shift = _springs.Create(0, 0.40, 0.86, 0.05);
+        _approach = _springs.Create(0, 0.26, 0.78, 0.002);
 
         _cover = new CoverWatcher(IslandZone);
         _cover.Changed += UpdateTuck;
         _edgeWatch = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(EdgeTickMs) };
         _edgeWatch.Tick += (_, _) => OnEdgeTick();
-        _springs.Frame += ApplyGeometry;
+        _springs.Frame += OnSpringFrame;
+        _springs.Settled += OnSpringsSettled;
 
         _bubbles = new BubbleStrip(BubbleLayer, _springs, (Brush)FindResource("GlassFill"), OnBubbleClicked);
 
@@ -263,9 +331,13 @@ public partial class MainWindow : Window
         await _media.InitializeAsync();
         await _notifications.InitializeAsync();
         _fullscreen.Start();
+        _clockWatcher.Start();
+        _state.Privacy.Start();
+        _state.Updates.StartAutomatic(() => _settings.CheckForUpdates);
         _cover.Start();
         UpdateTuck();
         await SystemCapabilities.ProbeAsync();
+        await _state.Controls.InitializeAsync();
     }
 
     private void OnClosed(object? sender, EventArgs e)
@@ -275,6 +347,8 @@ public partial class MainWindow : Window
         _settingsTick.Stop();
         _edgeWatch.Stop();
         _cover.Dispose();
+        _state.Privacy.Dispose();
+        _state.Updates.Dispose();
         if (_hotkeyRegistered)
         {
             NativeMethods.UnregisterHotKey(_hwnd, HotkeyId);
@@ -283,6 +357,7 @@ public partial class MainWindow : Window
         _fullscreen.Stop();
         _collapseIntent.Stop();
         _keyboardClose.Stop();
+        _clockWatcher.Dispose();
         _timers.Stop();
         _notifications.Dispose();
         _bluetooth.Dispose();
@@ -345,12 +420,16 @@ public partial class MainWindow : Window
     private void OnStateChanged()
     {
         var mode = _state.Mode;
+        if (mode != IslandMode.Tucked)
+        {
+            FoldApproach(); // the swell becomes part of the real shape, so opening starts from where it is
+        }
         if (mode == IslandMode.Settings)
         {
             _shrinkPending = false;
             SetCanvas(IslandMetrics.SettingsCanvasWidth, IslandMetrics.SettingsCanvasHeight);
         }
-        else if (_canvasWidth > IslandMetrics.WindowWidth)
+        else if (_canvasHeight > IslandMetrics.WindowHeight)
         {
             _shrinkPending = true; // after the island has collapsed (see ApplyGeometry)
         }
@@ -359,7 +438,16 @@ public partial class MainWindow : Window
         double tuckedWidth = mode == IslandMode.Tucked
             ? TuckedPane.Configure(_media.HasMedia && _media.IsPlaying, _state.ShowTimer, _state.WaitingApps)
             : 0;
+        bool privacyOn = _state.Privacy.AnyInUse;
+        if (mode == IslandMode.Tucked && privacyOn && tuckedWidth <= 0)
+        {
+            tuckedWidth = PrivacyBarWidth; // a 4 px line has no room for the dots, so it becomes a slim bar
+        }
         _tuckedBar = tuckedWidth > 0;
+        if (mode == IslandMode.Tucked)
+        {
+            _growWidth = _tuckedBar ? 14 : 20;
+        }
 
         (double w, double h, double r) = mode switch
         {
@@ -372,6 +460,13 @@ public partial class MainWindow : Window
             IslandMode.Tucked => (IslandMetrics.TuckedWidth, IslandMetrics.TuckedHeight, IslandMetrics.TuckedHeight / 2),
             _ => (IslandMetrics.IdleWidth, IslandMetrics.IdleHeight, IslandMetrics.IdleHeight / 2),
         };
+
+        // Pill shapes widen evenly so the dots get their own room at the right end and the content
+        // stays centred. The open dashboard and Settings have a free top-right corner already.
+        if (privacyOn && mode != IslandMode.Expanded && mode != IslandMode.Settings)
+        {
+            w += 2 * (DotsRight(h) + DotsWidth() + DotContentGap);
+        }
 
         bool targetChanged = Math.Abs(w - _width.Target) > 0.01
             || Math.Abs(h - _height.Target) > 0.01
@@ -389,10 +484,11 @@ public partial class MainWindow : Window
             }
             else
             {
-                // Collapsing: quicker and nearly critically damped, so it tucks away cleanly.
-                _width.Configure(0.38, 0.86);
-                _height.Configure(0.36, 0.90);
-                _radius.Configure(0.38, 0.95);
+                // Collapsing: critically damped, so it eases into the smaller size without ever
+                // dipping below it and bouncing back (that dip reads as a jitter at the end).
+                _width.Configure(0.34, 1.0);
+                _height.Configure(0.32, 1.0);
+                _radius.Configure(0.34, 1.0);
             }
 
             _width.Target = w;
@@ -517,7 +613,12 @@ public partial class MainWindow : Window
     private void OnBubbleClicked(string activityId)
     {
         _keyboardClose.Stop();
-        _state.SetExpanded(true, Dashboard.KeyForActivity(activityId)); // straight to that app, or Music
+        string? key = Dashboard.KeyForActivity(activityId);
+        if (key == Dashboard.NotificationsKey)
+        {
+            _state.FocusNotificationGroup(_notificationManager.FindByActivityId(activityId));
+        }
+        _state.SetExpanded(true, key); // straight to that app's notifications, or Music
         // The cursor may sit outside the expanded card; give it time to move in before collapsing.
         _collapseIntent.Stop();
         _collapseIntent.Interval = TimeSpan.FromMilliseconds(1500);
@@ -532,18 +633,59 @@ public partial class MainWindow : Window
         _springs.Wake();
     }
 
+    // True only while ApplyGeometry runs for a moving frame (see UpdateBlurRegion).
+    private bool _inMotion;
+    private (int Left, int Top, int Right, int Bottom, int Diameter)? _motionRegion;
+
+    private void OnSpringFrame()
+    {
+        _inMotion = true;
+        try
+        {
+            ApplyGeometry();
+        }
+        finally
+        {
+            _inMotion = false;
+        }
+    }
+
+    /// <summary>Everything stopped: apply the exact blur shape and click region once.</summary>
+    private void OnSpringsSettled()
+    {
+        _motionRegion = null;
+        _lastRegions.Clear();
+        ApplyGeometry();
+    }
+
     private void ApplyGeometry()
     {
-        double w = Math.Clamp(_width.Value, 10, _canvasWidth - 8);
-        double h = Math.Clamp(_height.Value, 10, _canvasHeight - IslandMetrics.TopMargin - 6);
-        double r = Math.Clamp(_radius.Value, 0, Math.Min(w, h) / 2);
+        // The approach swell sits on top of the base shape; it is zero except while tucked.
+        double a = Math.Max(_approach.Value, -0.05);
+        double w = Math.Clamp(_width.Value + a * _growWidth, 10, _canvasWidth - 8);
+        double h = Math.Clamp(_height.Value, 10, _canvasHeight - IslandMetrics.TopMargin - 6) + a * GrowHeight;
+        double r = _radius.Value;
+        if (a != 0)
+        {
+            r += Math.Clamp(a, 0, 1) * (h / 2 - r); // the swollen bar turns into a full pill
+        }
+        r = Math.Clamp(r, 0, Math.Min(w, h) / 2);
 
         Island.Width = w;
         Island.Height = h;
         var corners = new CornerRadius(r);
         IslandFill.CornerRadius = corners;
         IslandSheen.CornerRadius = corners;
+        IslandProgress.CornerRadius = corners;
         IslandRim.CornerRadius = corners;
+
+        // Keep the bar's icons and wave centred while it grows downward.
+        double nudge = Math.Round(Math.Max(a, 0) * GrowHeight / 2, 1);
+        if (Math.Abs(TuckedPane.Margin.Top - nudge) > 0.05)
+        {
+            TuckedPane.Margin = new Thickness(0, nudge, 0, 0);
+        }
+        UpdateProgressVisual();
         double shift = _shift.Value;
         IslandShift.Y = shift;
 
@@ -561,6 +703,18 @@ public partial class MainWindow : Window
         double pillCenterY = IslandMetrics.TopMargin + shift + h * s / 2;
         _bubbles.Layout(pillRight, pillCenterY);
 
+        // Privacy dots: centred on the pill's height while it is a pill, level with the tab row
+        // (top-right corner) once it is open. Both rules meet at h = 56, so morphs stay continuous.
+        if (PrivacyDots.Visibility == Visibility.Visible)
+        {
+            double top = h <= 56 ? (h - DotSize) / 2 : 28 - DotSize / 2;
+            var margin = new Thickness(0, Math.Round(top, 1), Math.Round(DotsRight(h), 1), 0);
+            if (PrivacyDots.Margin != margin)
+            {
+                PrivacyDots.Margin = margin;
+            }
+        }
+
         UpdateBlurRegion(w, h, r, s, shift);
 
         if (_shrinkPending && _width.IsAtRest && _height.IsAtRest && _radius.IsAtRest)
@@ -568,6 +722,58 @@ public partial class MainWindow : Window
             _shrinkPending = false;
             SetCanvas(IslandMetrics.WindowWidth, IslandMetrics.WindowHeight);
         }
+    }
+
+    // ================================================================ privacy indicator
+
+    /// <summary>Gap from the island's right edge to the dots: tucks into a pill's round end, sits clear of a big corner.</summary>
+    private static double DotsRight(double h) => Math.Clamp(h / 2 - 7, 5, 22);
+
+    /// <summary>Width of the visible dots (one or both).</summary>
+    private double DotsWidth()
+    {
+        int n = (_state.Privacy.CameraInUse ? 1 : 0) + (_state.Privacy.MicInUse ? 1 : 0);
+        return n == 0 ? 0 : n * DotSize + (n - 1) * DotGap;
+    }
+
+    /// <summary>Camera or microphone started or stopped being used: the dots pop in or fade away, and the pill makes room.</summary>
+    private void UpdatePrivacyDots()
+    {
+        bool on = _state.Privacy.AnyInUse;
+        MicDot.Margin = new Thickness(_state.Privacy.CameraInUse && _state.Privacy.MicInUse ? DotGap : 0, 0, 0, 0);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        if (on && !_privacyShown)
+        {
+            _privacyShown = true;
+            PrivacyDots.Visibility = Visibility.Visible;
+            PrivacyDots.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(220)) { EasingFunction = ease });
+            var pop = new DoubleAnimation(1, TimeSpan.FromMilliseconds(420))
+            {
+                BeginTime = TimeSpan.FromMilliseconds(60), // the pill starts widening first
+                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.5 },
+            };
+            PrivacyScale.BeginAnimation(ScaleTransform.ScaleXProperty, pop);
+            PrivacyScale.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
+        }
+        else if (!on && _privacyShown)
+        {
+            _privacyShown = false;
+            var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease };
+            fade.Completed += (_, _) =>
+            {
+                if (!_privacyShown)
+                {
+                    PrivacyDots.Visibility = Visibility.Collapsed;
+                }
+            };
+            PrivacyDots.BeginAnimation(OpacityProperty, fade);
+            var shrink = new DoubleAnimation(0.3, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease };
+            PrivacyScale.BeginAnimation(ScaleTransform.ScaleXProperty, shrink);
+            PrivacyScale.BeginAnimation(ScaleTransform.ScaleYProperty, shrink);
+        }
+
+        OnStateChanged(); // retarget the width: room for the dots, or give it back
+        ApplyGeometry();
     }
 
     // ================================================================ tuck away
@@ -594,6 +800,7 @@ public partial class MainWindow : Window
             _revealed = false;
             _edgeHoldMs = 0;
             _edgeWatch.Stop();
+            ResetApproach();
         }
         else if (!_edgeWatch.IsEnabled)
         {
@@ -608,34 +815,163 @@ public partial class MainWindow : Window
         {
             return;
         }
+        long now = Environment.TickCount64;
+        int elapsed = (int)Math.Clamp(now - _lastEdgeTickMs, 1, 100);
+        _lastEdgeTickMs = now;
         var zone = IslandZone();
 
         if (!_revealed)
         {
-            // Pointer held against the top edge over the island's spot: bring it back.
-            // A quick click on a tab never lasts long enough to trigger this.
-            bool atEdge = pointer.Y <= zone.Top + 1 && pointer.X >= zone.Left && pointer.X <= zone.Right;
-            _edgeHoldMs = atEdge ? _edgeHoldMs + EdgeTickMs : 0;
-            if (_edgeHoldMs >= EdgeHoldMs && _state.Mode == IslandMode.Tucked)
-            {
-                _edgeHoldMs = 0;
-                _awayMs = 0;
-                _revealed = true;
-                UpdateTuck();
-            }
+            TickTucked(pointer, zone, elapsed);
             return;
         }
 
         // Revealed: stays while the pointer is on or near it, or while it is open.
+        SetEdgeTick(EdgeTickMs);
         var near = new ScreenRect(zone.Left - 40, zone.Top, zone.Right + 40, zone.Bottom + 60);
         bool inUse = near.Contains(pointer.X, pointer.Y) || Island.IsMouseOver || _menuOpen
             || _state.IsExpanded || _state.IsSettingsOpen;
-        _awayMs = inUse ? 0 : _awayMs + EdgeTickMs;
+        _awayMs = inUse ? 0 : _awayMs + elapsed;
         if (_awayMs >= RevealGraceMs)
         {
             _revealed = false;
             UpdateTuck();
         }
+    }
+
+    /// <summary>
+    /// Tucked: the bar reacts as the pointer approaches (swell), fills while the pointer rests on
+    /// it, and opens when the fill completes. A quick pass toward a tab or its close button is
+    /// too fast to count, so it never opens by accident. Pushing against the top edge over the
+    /// island's strip still opens it too.
+    /// </summary>
+    private void TickTucked(NativeMethods.CursorPoint pointer, ScreenRect zone, int elapsed)
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        bool settled = _state.Mode == IslandMode.Tucked && _width.IsAtRest && _height.IsAtRest;
+
+        bool atEdge = pointer.Y <= zone.Top + 1 && pointer.X >= zone.Left && pointer.X <= zone.Right;
+        _edgeHoldMs = atEdge ? _edgeHoldMs + elapsed : 0;
+
+        // Distance from the pointer to the bar as it is drawn, in DIPs (0 when on it).
+        double distance = double.MaxValue;
+        bool onBar = false;
+        if (settled)
+        {
+            var work = SystemParameters.WorkArea;
+            double barWidth = Math.Max(_width.Target, 60);
+            double barHeight = Math.Max(_height.Target, 10);
+            double centerX = (work.Left + work.Width / 2) * dpi.DpiScaleX;
+            double halfWidth = (barWidth / 2 + HitPadX) * dpi.DpiScaleX;
+            double top = work.Top * dpi.DpiScaleY;
+            double bottom = top + (IslandMetrics.TopMargin - IslandMetrics.TuckedLift + barHeight + HitPadBottom) * dpi.DpiScaleY;
+            double dx = Math.Max(Math.Max(centerX - halfWidth - pointer.X, pointer.X - (centerX + halfWidth)), 0);
+            double dy = Math.Max(Math.Max(top - pointer.Y, pointer.Y - bottom), 0);
+            distance = Math.Sqrt(dx * dx + dy * dy) / dpi.DpiScaleX;
+            onBar = dx == 0 && dy == 0;
+        }
+
+        // Swell: grows smoothly as the pointer closes in, relaxes as it leaves. Visual only.
+        double near = Math.Clamp(1 - distance / ApproachRadius, 0, 1);
+        SetApproach(near * near * (3 - 2 * near), settled);
+
+        // Resting on the bar (slowly, not just passing over it) fills it up, then it opens.
+        if (onBar)
+        {
+            double moved = Math.Sqrt(Math.Pow(pointer.X - _lastPointer.X, 2) + Math.Pow(pointer.Y - _lastPointer.Y, 2)) / dpi.DpiScaleX;
+            double speed = moved * 1000.0 / elapsed;
+            _dwellMs = speed <= StillSpeed ? _dwellMs + elapsed : 0;
+        }
+        else
+        {
+            _dwellMs = 0;
+        }
+        _lastPointer = pointer;
+        _dwellProgress = Math.Clamp(_dwellMs / (double)DwellMs, 0, 1);
+        UpdateProgressVisual();
+
+        // Check the cursor often only while it is close; far away a slow check costs almost nothing.
+        SetEdgeTick(settled && distance < ApproachRadius + 24 ? FastTickMs : EdgeTickMs);
+
+        if ((_dwellMs >= DwellMs || _edgeHoldMs >= EdgeHoldMs) && _state.Mode == IslandMode.Tucked)
+        {
+            Log.Info(_dwellMs >= DwellMs ? "Tuck: opened by resting on the bar" : "Tuck: opened by holding the top edge");
+            _edgeHoldMs = 0;
+            _awayMs = 0;
+            _revealed = true;
+            UpdateTuck();
+        }
+    }
+
+    private void SetApproach(double target, bool settled)
+    {
+        if (!settled)
+        {
+            target = 0;
+        }
+        else if (target > 0)
+        {
+            _approachEngaged = true; // from here the blur stays out of the way while tucked
+        }
+        if (target == _approach.Target || (target != 0 && Math.Abs(target - _approach.Target) < 0.015))
+        {
+            return;
+        }
+        _approach.Target = target;
+        _springs.Wake();
+    }
+
+    private void SetEdgeTick(int milliseconds)
+    {
+        if ((int)_edgeWatch.Interval.TotalMilliseconds != milliseconds)
+        {
+            _edgeWatch.Interval = TimeSpan.FromMilliseconds(milliseconds);
+        }
+    }
+
+    /// <summary>Back to a calm bar: no swell, no fill, slow cursor check.</summary>
+    private void ResetApproach()
+    {
+        _dwellMs = 0;
+        _dwellProgress = 0;
+        if (_approach.Target != 0)
+        {
+            _approach.Target = 0;
+            _springs.Wake();
+        }
+        SetEdgeTick(EdgeTickMs);
+        UpdateProgressVisual();
+    }
+
+    /// <summary>
+    /// The island is leaving the tucked state: move the swell into the base springs so the
+    /// shape does not dip back to the small bar before it opens.
+    /// </summary>
+    private void FoldApproach()
+    {
+        _approachEngaged = false;
+        _dwellMs = 0;
+        _dwellProgress = 0;
+        double a = _approach.Value;
+        if (Math.Abs(a) > 0.0005)
+        {
+            double newHeight = Math.Max(_height.Value, 10) + a * GrowHeight;
+            _width.Value += a * _growWidth;
+            _radius.Value += Math.Clamp(a, 0, 1) * (newHeight / 2 - _radius.Value);
+            _height.Value = newHeight;
+        }
+        _approach.Value = 0;
+        _approach.Velocity = 0;
+        _approach.Target = 0;
+        UpdateProgressVisual();
+    }
+
+    /// <summary>A soft light fills the tucked bar while the pointer rests on it.</summary>
+    private void UpdateProgressVisual()
+    {
+        IslandProgress.Opacity = _state.Mode == IslandMode.Tucked
+            ? Math.Clamp(_approach.Value, 0, 1) * 0.05 + _dwellProgress * 0.26
+            : 0;
     }
 
     // ================================================================ settings
@@ -770,12 +1106,34 @@ public partial class MainWindow : Window
         // The island is centred horizontally and scales around its top edge.
         // Once tucked into its line, the blur steps aside completely: no glass, and no window
         // region that could catch a click meant for the tabs underneath.
-        bool tuckedAway = _state.Mode == IslandMode.Tucked && _width.IsAtRest && _height.IsAtRest;
+        bool tuckedAway = _state.Mode == IslandMode.Tucked
+            && ((_width.IsAtRest && _height.IsAtRest) || _approachEngaged);
         var shapes = new List<BackdropShape>(1 + IslandMetrics.MaxBubbles);
         if (!tuckedAway)
         {
-            shapes.Add(new((_canvasWidth - w * s) / 2 * sx, (IslandMetrics.TopMargin + shift) * sy,
-                w * s * sx, h * s * sy, r * s * sx, 1));
+            // The blur lives in another window and reaches the screen about a frame after the
+            // island itself. While shrinking, pull the blur in by that frame's travel, so it never
+            // pokes out past the island's edge as a halo (growing needs nothing: a lagging blur
+            // then sits just inside the edge, under the tint, where it can't be seen).
+            double insetX = 0;
+            double insetY = 0;
+            if (_inMotion)
+            {
+                const double frame = 1.0 / 60;
+                if (_width.Velocity < 0)
+                {
+                    insetX = Math.Min(14, -_width.Velocity * s * frame / 2); // centred: each side moves half
+                }
+                if (_height.Velocity < 0)
+                {
+                    insetY = Math.Min(14, -_height.Velocity * s * frame); // top anchored: the bottom moves it all
+                }
+            }
+            double blurW = Math.Max(2, w * s - 2 * insetX);
+            double blurH = Math.Max(2, h * s - insetY);
+            double blurR = Math.Min(r * s, Math.Min(blurW, blurH) / 2);
+            shapes.Add(new(((_canvasWidth - w * s) / 2 + insetX) * sx, (IslandMetrics.TopMargin + shift) * sy,
+                blurW * sx, blurH * sy, blurR * sx, 1));
             foreach (var bubble in _bubbles.Shapes())
             {
                 shapes.Add(new(bubble.X * sx, bubble.Y * sy, bubble.Diameter * sx, bubble.Diameter * sy,
@@ -793,6 +1151,29 @@ public partial class MainWindow : Window
                 (int)Math.Ceiling(shape.X + shape.Width + RegionOutset) + 1,
                 (int)Math.Ceiling(shape.Y + shape.Height + RegionOutset) + 1,
                 (int)Math.Round(2 * (shape.Radius + RegionOutset))));
+        }
+
+        // The window region only decides which clicks the blur window takes; the blur's look comes
+        // from the shapes above. Rebuilding it every frame makes Windows re-clip the window each
+        // frame, and while shrinking that clip lands before the blur moves, chopping its edges.
+        // So while moving, use one padded rectangle around everything that only ever grows (it
+        // rarely changes, usually not at all when shrinking), and set the exact shape at rest.
+        if (_inMotion && regions.Count > 0)
+        {
+            const int pad = 24;
+            var box = (Left: regions.Min(x => x.Left) - pad, Top: regions.Min(x => x.Top) - pad,
+                Right: regions.Max(x => x.Right) + pad, Bottom: regions.Max(x => x.Bottom) + pad, Diameter: 0);
+            if (_motionRegion is { } held)
+            {
+                box = (Math.Min(held.Left, box.Left), Math.Min(held.Top, box.Top),
+                    Math.Max(held.Right, box.Right), Math.Max(held.Bottom, box.Bottom), 0);
+            }
+            _motionRegion = box;
+            regions = new List<(int Left, int Top, int Right, int Bottom, int Diameter)>(1) { box };
+        }
+        else if (!_inMotion)
+        {
+            _motionRegion = null;
         }
 
         if (regions.SequenceEqual(_lastRegions))
@@ -858,10 +1239,18 @@ public partial class MainWindow : Window
         }
         ReleasePress();
 
+        // An update banner opens Settings › Updates, where one click installs it.
+        if (_state.Mode == IslandMode.Toast && _state.CurrentToast?.Kind == ToastKind.Update)
+        {
+            _state.OpenSettings();
+            Dispatcher.InvokeAsync(() => _settingsModel.Navigate("updates"), DispatcherPriority.Background);
+            return;
+        }
+
         // Open on whatever the pill is announcing: the peeking app, or the new song.
         string? tab = _state.Mode switch
         {
-            IslandMode.Peek when _state.PeekGroup is { } group => Dashboard.AppKey(group),
+            IslandMode.Peek when _state.PeekGroup is { } group => _state.FocusNotificationGroup(group),
             IslandMode.Toast when _state.CurrentToast?.Kind == ToastKind.Media => Dashboard.MusicKey,
             IslandMode.Toast when _state.CurrentToast?.Kind == ToastKind.Timer => Dashboard.HomeKey,
             _ => null,
@@ -1098,7 +1487,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void StopTimer_Click(object sender, RoutedEventArgs e) => _timers.Stop();
+    private void StopTimer_Click(object sender, RoutedEventArgs e)
+    {
+        if (_timers.IsMirrored)
+        {
+            _timers.DismissMirror(); // hides the Clock app's stopwatch; it keeps running in Clock
+        }
+        else
+        {
+            _timers.Stop();
+        }
+    }
 
     private void ClearNotifications_Click(object sender, RoutedEventArgs e) => _notificationManager.ClearAll();
 

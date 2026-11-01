@@ -1,11 +1,11 @@
 ; Dynamic Island for Windows: per-user installer, no administrator rights needed.
 ;
 ; Built automatically by .github/workflows/release.yml, or locally by package.bat:
-;   ISCC /DAppVersion=1.0.0 /DArch=x64 /DSourceDir=..\publish\win-x64 installer\DynamicIsland.iss
+;   ISCC /DAppVersion=2.0.0 /DArch=x64 /DSourceDir=..\publish\win-x64 installer\DynamicIsland.iss
 ; Needs Inno Setup 6.3 or newer (https://jrsoftware.org/isinfo.php).
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "2.0.0"
 #endif
 #ifndef Arch
   #define Arch "x64"

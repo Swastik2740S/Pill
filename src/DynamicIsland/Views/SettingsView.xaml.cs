@@ -21,6 +21,7 @@ public sealed class SettingRowSelector : DataTemplateSelector
     public DataTemplate? Choice { get; set; }
     public DataTemplate? Link { get; set; }
     public DataTemplate? Action { get; set; }
+    public DataTemplate? AppList { get; set; }
 
     public override DataTemplate? SelectTemplate(object item, DependencyObject container) => item is SettingItem setting
         ? setting.Kind switch
@@ -30,6 +31,7 @@ public sealed class SettingRowSelector : DataTemplateSelector
             SettingKind.Choice => Choice,
             SettingKind.Link => Link,
             SettingKind.Action => Action,
+            SettingKind.AppList => AppList,
             _ => Info,
         }
         : base.SelectTemplate(item, container);
@@ -67,6 +69,20 @@ public partial class SettingsView : UserControl
     /// <summary>Close Settings. True: go back to the dashboard; false: collapse the island.</summary>
     public event Action<bool>? CloseRequested;
 
+    /// <summary>A dashboard tab was clicked in Settings' tab row (its key).</summary>
+    public event Action<string>? TabRequested;
+
+    /// <summary>The dashboard's tabs, shown on top so any card is one click away.</summary>
+    public void SetTabs(System.Collections.IEnumerable tabs) => Switcher.ItemsSource = tabs;
+
+    private void Tab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: DashboardTab tab } && tab.Card != DashboardCard.Settings)
+        {
+            TabRequested?.Invoke(tab.Key);
+        }
+    }
+
     private SettingsModel? Model => DataContext as SettingsModel;
 
     /// <summary>Put the caret in search; waits until the panel is actually on screen.</summary>
@@ -99,6 +115,7 @@ public partial class SettingsView : UserControl
     private void OnNavigated(SettingItem? row)
     {
         PageScroll.ScrollToTop();
+        AnimatePageIn();
         if (row is null)
         {
             return;
@@ -116,6 +133,21 @@ public partial class SettingsView : UserControl
             };
             timer.Start();
         }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>The new page fades in and rises a few pixels, so switching categories feels smooth.</summary>
+    private void AnimatePageIn()
+    {
+        if (PageScroll.RenderTransform is not TranslateTransform slide || slide.IsFrozen)
+        {
+            slide = new TranslateTransform();
+            PageScroll.RenderTransform = slide;
+        }
+        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+        slide.BeginAnimation(TranslateTransform.YProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
+        PageScroll.BeginAnimation(OpacityProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease });
     }
 
     private static FrameworkElement? FindRowElement(DependencyObject parent, SettingItem row)
@@ -144,6 +176,16 @@ public partial class SettingsView : UserControl
             return;
         }
         bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+
+        // Esc in the app picker closes the picker, not Settings.
+        if (e.Key == Key.Escape && e.OriginalSource is TextBox { Tag: "app-picker" } picker
+            && QuickAppsOf(picker) is { IsPicking: true } apps)
+        {
+            e.Handled = true;
+            apps.CancelPick();
+            FocusSearch();
+            return;
+        }
 
         if (e.Key == Key.Escape)
         {
@@ -236,6 +278,70 @@ public partial class SettingsView : UserControl
             Log.Warn($"'{item.Title}' failed", ex);
         }
         Model?.RefreshVisible();
+    }
+
+    // ------------------------------------------------------------ quick apps row
+
+    /// <summary>The quick apps model of the row a control sits in.</summary>
+    private static QuickAppsModel? QuickAppsOf(object sender)
+    {
+        for (var node = sender as DependencyObject; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is FrameworkElement { DataContext: SettingItem { Payload: QuickAppsModel model } })
+            {
+                return model;
+            }
+        }
+        return null;
+    }
+
+    private void AddApp_Click(object sender, RoutedEventArgs e) => QuickAppsOf(sender)?.BeginPick(-1);
+
+    private void AppReplace_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: QuickApp app } && QuickAppsOf(sender) is { } model)
+        {
+            model.BeginPick(model.Apps.IndexOf(app));
+        }
+    }
+
+    private void AppRemove_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: QuickApp app })
+        {
+            QuickAppsOf(sender)?.Remove(app);
+        }
+    }
+
+    private void AppMoveEarlier_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: QuickApp app })
+        {
+            QuickAppsOf(sender)?.MoveEarlier(app);
+        }
+    }
+
+    private void AppPick_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: QuickApp app })
+        {
+            QuickAppsOf(sender)?.Pick(app);
+        }
+    }
+
+    private void PickCancel_Click(object sender, RoutedEventArgs e) => QuickAppsOf(sender)?.CancelPick();
+
+    /// <summary>The picker opened: put the caret in its search box.</summary>
+    private void PickerSearch_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is TextBox { IsVisible: true } box)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                box.Focus();
+                Keyboard.Focus(box);
+            }, DispatcherPriority.Input);
+        }
     }
 
     private void Slider_Loaded(object sender, RoutedEventArgs e)

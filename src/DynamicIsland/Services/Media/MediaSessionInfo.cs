@@ -36,11 +36,28 @@ public sealed class MediaSessionInfo : ObservableObject
             if (Set(ref _title, value))
             {
                 OnPropertyChanged(nameof(Tooltip));
+                OnPropertyChanged(nameof(DisplayTitle));
             }
         }
     }
 
-    public string Artist { get => _artist; set => Set(ref _artist, value); }
+    public string Artist
+    {
+        get => _artist;
+        set
+        {
+            if (Set(ref _artist, value))
+            {
+                OnPropertyChanged(nameof(Subtitle));
+            }
+        }
+    }
+
+    /// <summary>Row title in "Also playing": the track or video, or the app when it has none.</summary>
+    public string DisplayTitle => string.IsNullOrWhiteSpace(_title) ? Source.AppName : _title;
+
+    /// <summary>Row subtitle: artist and app ("The Weeknd · Spotify").</summary>
+    public string Subtitle => string.IsNullOrWhiteSpace(_artist) ? Source.AppName : $"{_artist} \u00B7 {Source.AppName}";
 
     public ImageSource? Thumbnail
     {

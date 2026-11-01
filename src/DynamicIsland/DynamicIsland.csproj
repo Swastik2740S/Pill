@@ -13,7 +13,7 @@
     <AssemblyName>DynamicIsland</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Release builds get their version from the git tag (see .github/workflows/release.yml) -->
-    <Version>1.0.0</Version>
+    <Version>2.0.0</Version>
     <Product>Dynamic Island for Windows</Product>
     <Description>An iPhone style Dynamic Island for Windows</Description>
     <Authors>Swastik Verma</Authors>
@@ -32,6 +32,8 @@
   <ItemGroup>
     <!-- Core Audio (volume notifications + peak meter). Only the WASAPI part of NAudio. -->
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <!-- Laptop screen brightness for the Controls card (WMI). -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

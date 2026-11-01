@@ -24,6 +24,9 @@ public sealed class SpringSystem
     /// <summary>Raised once per rendered frame after the springs advanced.</summary>
     public event Action? Frame;
 
+    /// <summary>Raised once when every spring has come to rest (after the last Frame).</summary>
+    public event Action? Settled;
+
     public bool IsRunning => _running;
 
     public Spring Create(double initial, double response, double dampingFraction, double epsilon)
@@ -99,6 +102,7 @@ public sealed class SpringSystem
         {
             CompositionTarget.Rendering -= OnRendering;
             _running = false;
+            Settled?.Invoke();
         }
     }
 }

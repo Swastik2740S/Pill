@@ -16,6 +16,13 @@ public static class ContentTransition
     private static readonly IEasingFunction FadeOutEase = Frozen(new CubicEase { EasingMode = EasingMode.EaseIn });
     private static readonly IEasingFunction ScaleInEase = Frozen(new SpringEase { DampingRatio = 0.72, Oscillations = 1.35 });
 
+    // Above this area (in DIPs) a pane fades and scales without the blur: blurring a big surface
+    // like Settings or the dashboard every frame costs enough to drop frames while it resizes.
+    private const double BlurAreaLimit = 60_000;
+
+    private static bool UseBlur(FrameworkElement view) =>
+        view.ActualWidth * view.ActualHeight is > 0 and < BlurAreaLimit;
+
     public static void Show(FrameworkElement view, double fromScale, double delayMs)
     {
         var scale = EnsureScale(view);
@@ -40,6 +47,11 @@ public static class ContentTransition
         scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow, HandoffBehavior.SnapshotAndReplace);
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow, HandoffBehavior.SnapshotAndReplace);
 
+        if (!UseBlur(view))
+        {
+            view.Effect = null;
+            return;
+        }
         var blur = new BlurEffect
         {
             Radius = fromHidden ? 10 : CurrentBlur(view),
@@ -83,6 +95,11 @@ public static class ContentTransition
         scale.BeginAnimation(ScaleTransform.ScaleXProperty, shrink, HandoffBehavior.SnapshotAndReplace);
         scale.BeginAnimation(ScaleTransform.ScaleYProperty, shrink, HandoffBehavior.SnapshotAndReplace);
 
+        if (!UseBlur(view))
+        {
+            view.Effect = null;
+            return;
+        }
         var blur = new BlurEffect { Radius = CurrentBlur(view), RenderingBias = RenderingBias.Performance };
         view.Effect = blur;
         blur.BeginAnimation(BlurEffect.RadiusProperty, new DoubleAnimation(6, Ms(150)));

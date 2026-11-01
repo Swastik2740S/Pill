@@ -25,7 +25,9 @@ public enum IslandMode
 public static class IslandMetrics
 {
     // Fixed transparent canvas; big enough for the expanded dashboard and the mini bubbles.
-    public const double WindowWidth = 620;
+    // As wide as the Settings canvas, so switching to and from Settings only changes the height
+    // (anchored at the top): a sideways resize shows one stale, shifted frame, a visible jolt.
+    public const double WindowWidth = 800;
     public const double WindowHeight = 470;
     public const double TopMargin = 6;
 
@@ -45,10 +47,10 @@ public static class IslandMetrics
 
     // Settings panel, and the larger window canvas used only while it is open.
     public const double SettingsWidth = 760;
-    public const double SettingsHeight = 520;
+    public const double SettingsHeight = 566;
     public const double SettingsRadius = 28;
     public const double SettingsCanvasWidth = 800;
-    public const double SettingsCanvasHeight = 560;
+    public const double SettingsCanvasHeight = 606;
 
     public const double ExpandedWidth = 400;
     public const double ExpandedRadius = 30;
@@ -70,6 +72,7 @@ public enum ToastKind
     Notification,
     Media,
     Timer,
+    Update,
 }
 
 /// <summary>Everything a toast banner needs to render. Immutable, so it can be replaced atomically.</summary>

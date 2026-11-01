@@ -16,11 +16,19 @@
     <SolidColorBrush x:Key="ArtworkPlaceholder" Color="#FF2C2C2E"/>
     <SolidColorBrush x:Key="TimerOrange" Color="#FFFF9F0A"/>
     <SolidColorBrush x:Key="TimerOrangeFill" Color="#40FF9F0A"/>
+    <!-- The one accent colour: selected options, switches that are on, focus -->
+    <SolidColorBrush x:Key="Accent" Color="#FF0A84FF"/>
     <SolidColorBrush x:Key="MenuBackground" Color="#F71C1C1E"/>
     <SolidColorBrush x:Key="MenuBorder" Color="#26FFFFFF"/>
     <SolidColorBrush x:Key="MenuHighlight" Color="#24FFFFFF"/>
 
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+    <!-- Soft gloss on the tab icon tiles: a light top fading out by the middle -->
+    <LinearGradientBrush x:Key="TabGloss" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#40FFFFFF" Offset="0"/>
+        <GradientStop Color="#00FFFFFF" Offset="0.55"/>
+    </LinearGradientBrush>
 
     <!-- ============================================================ Island surfaces -->
     <SolidColorBrush x:Key="SolidFill" Color="#FF000000"/>
@@ -76,6 +84,42 @@
         </DoubleAnimation>
     </Storyboard>
 
+    <!-- ============================================================ Hover and selection fades shared by every button.
+         Templates name their overlays "Hover" and "Selected"; nothing snaps, everything eases. -->
+    <Storyboard x:Key="HoverIn">
+        <DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.14">
+            <DoubleAnimation.EasingFunction>
+                <CubicEase EasingMode="EaseOut"/>
+            </DoubleAnimation.EasingFunction>
+        </DoubleAnimation>
+    </Storyboard>
+    <Storyboard x:Key="HoverOut">
+        <DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.24">
+            <DoubleAnimation.EasingFunction>
+                <CubicEase EasingMode="EaseOut"/>
+            </DoubleAnimation.EasingFunction>
+        </DoubleAnimation>
+    </Storyboard>
+    <Storyboard x:Key="SelectIn">
+        <DoubleAnimation Storyboard.TargetName="Selected" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.22">
+            <DoubleAnimation.EasingFunction>
+                <CubicEase EasingMode="EaseOut"/>
+            </DoubleAnimation.EasingFunction>
+        </DoubleAnimation>
+    </Storyboard>
+    <Storyboard x:Key="SelectOut">
+        <DoubleAnimation Storyboard.TargetName="Selected" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.22">
+            <DoubleAnimation.EasingFunction>
+                <CubicEase EasingMode="EaseOut"/>
+            </DoubleAnimation.EasingFunction>
+        </DoubleAnimation>
+    </Storyboard>
+    <!-- A lighter press for wide things (rows, sidebar items): a big shrink would feel heavy there -->
+    <Storyboard x:Key="PressDownSoft">
+        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.97" Duration="0:0:0.08"/>
+        <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.97" Duration="0:0:0.08"/>
+    </Storyboard>
+
     <!-- ============================================================ Transparent round icon button (media controls) -->
     <Style x:Key="IconButton" TargetType="Button">
         <Setter Property="Focusable" Value="False"/>
@@ -94,7 +138,12 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Trigger.EnterActions>
@@ -113,6 +162,44 @@
         </Setter>
     </Style>
 
+    <!-- ============================================================ App tile (quick apps) -->
+    <Style x:Key="TileButton" TargetType="Button">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                        </Grid.RenderTransform>
+                        <Border x:Name="Hover" CornerRadius="12" Background="#12FFFFFF" Opacity="0"/>
+                        <ContentPresenter Margin="4,0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource PressDown}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource PressUp}"/>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ============================================================ Filled circle button (timer controls) -->
     <Style x:Key="CircleButton" TargetType="Button">
         <Setter Property="Focusable" Value="False"/>
@@ -123,17 +210,22 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
+                    <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
                         <Grid.RenderTransform>
                             <ScaleTransform ScaleX="1" ScaleY="1"/>
                         </Grid.RenderTransform>
                         <Ellipse Fill="{TemplateBinding Background}"/>
-                        <Ellipse x:Name="Hover" Fill="#14FFFFFF" Opacity="0"/>
+                        <Ellipse x:Name="Hover" Fill="#1AFFFFFF" Opacity="0"/>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Trigger.EnterActions>
@@ -162,16 +254,22 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="14"
-                            Padding="{TemplateBinding Padding}" RenderTransformOrigin="0.5,0.5">
-                        <Border.RenderTransform>
+                    <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
                             <ScaleTransform ScaleX="1" ScaleY="1"/>
-                        </Border.RenderTransform>
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
+                        </Grid.RenderTransform>
+                        <Border Background="{TemplateBinding Background}" CornerRadius="14"/>
+                        <Border x:Name="Hover" Background="#18FFFFFF" CornerRadius="14" Opacity="0"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource SubtleFillHover}"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Trigger.EnterActions>
@@ -196,16 +294,31 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Root" Background="#12FFFFFF" CornerRadius="14" RenderTransformOrigin="0.5,0.5">
-                        <Border.RenderTransform>
+                    <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
                             <ScaleTransform ScaleX="1" ScaleY="1"/>
-                        </Border.RenderTransform>
+                        </Grid.RenderTransform>
+                        <Border Background="#12FFFFFF" CornerRadius="14"/>
+                        <Border x:Name="Hover" Background="#10FFFFFF" CornerRadius="14" Opacity="0"/>
                         <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-                    </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="#21FFFFFF"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource PressDownSoft}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource PressUp}"/>
+                            </Trigger.ExitActions>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -223,19 +336,30 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
+                    <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
                         <Grid.RenderTransform>
                             <ScaleTransform ScaleX="1" ScaleY="1"/>
                         </Grid.RenderTransform>
-                        <Border x:Name="Chrome" CornerRadius="11" Background="Transparent"/>
+                        <Border x:Name="Hover" CornerRadius="11" Background="#14FFFFFF" Opacity="0"/>
+                        <Border x:Name="Selected" CornerRadius="11" Background="#2EFFFFFF" Opacity="0"/>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Chrome" Property="Background" Value="#14FFFFFF"/>
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                            </Trigger.ExitActions>
                         </Trigger>
                         <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                            <Setter TargetName="Chrome" Property="Background" Value="#2EFFFFFF"/>
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource SelectIn}"/>
+                            </DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource SelectOut}"/>
+                            </DataTrigger.ExitActions>
                         </DataTrigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Trigger.EnterActions>
@@ -299,12 +423,32 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="Transparent" Padding="6,2">
-                        <ContentPresenter VerticalAlignment="Center"/>
-                    </Border>
+                    <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                        </Grid.RenderTransform>
+                        <Border x:Name="Hover" CornerRadius="8" Background="#12FFFFFF" Opacity="0"/>
+                        <ContentPresenter Margin="6,2" VerticalAlignment="Center"/>
+                    </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Foreground" Value="{StaticResource PrimaryText}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource PressDownSoft}"/>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource PressUp}"/>
+                            </Trigger.ExitActions>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

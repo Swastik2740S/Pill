@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows.Media;
 
 namespace DynamicIsland.Core.Settings;
 
@@ -25,13 +26,35 @@ public sealed class SettingsCategory : ObservableObject
 {
     private bool _isSelected;
 
-    public SettingsCategory(string key, string title, string glyph, string description, IReadOnlyList<SettingsSection> sections)
+    // One colour per category, used only for its sidebar tile and page header icon.
+    private static readonly Dictionary<string, string> Tints = new()
+    {
+        ["overview"] = "#FF636366",
+        ["connectivity"] = "#FF0A84FF",
+        ["sound"] = "#FFFF375F",
+        ["display"] = "#FF5E5CE6",
+        ["power"] = "#FF30D158",
+        ["notifications"] = "#FFFF453A",
+        ["personalization"] = "#FFBF5AF2",
+        ["applications"] = "#FFFF9F0A",
+        ["privacy"] = "#FF40C8E0",
+        ["accessibility"] = "#FF0A84FF",
+        ["updates"] = "#FF34C759",
+        ["system"] = "#FF8E8E93",
+    };
+
+    public SettingsCategory(string key, string title, string glyph, string description, IReadOnlyList<SettingsSection> sections,
+        IReadOnlyList<SettingItem>? tiles = null)
     {
         Key = key;
         Title = title;
         Glyph = glyph;
         Description = description;
         Sections = sections;
+        Tiles = tiles ?? Array.Empty<SettingItem>();
+        var tint = new SolidColorBrush((Color)ColorConverter.ConvertFromString(Tints.GetValueOrDefault(key, "#FF8E8E93")));
+        tint.Freeze();
+        Tint = tint;
         foreach (var section in sections)
         {
             foreach (var item in section.Items)
@@ -39,9 +62,28 @@ public sealed class SettingsCategory : ObservableObject
                 item.Category = title;
                 item.CategoryKey = key;
                 item.Section = section.Title;
+                if (item.Glyph.Length == 0)
+                {
+                    item.Glyph = glyph;
+                }
+            }
+        }
+        foreach (var tile in Tiles)
+        {
+            tile.Category = title;
+            tile.CategoryKey = key;
+            if (tile.Glyph.Length == 0)
+            {
+                tile.Glyph = glyph;
             }
         }
     }
+
+    /// <summary>The category's colour (sidebar tile and page header only).</summary>
+    public Brush Tint { get; }
+
+    /// <summary>Big status tiles at the top of the page (Overview).</summary>
+    public IReadOnlyList<SettingItem> Tiles { get; }
 
     public string Key { get; }
     public string Title { get; }
@@ -83,6 +125,11 @@ public sealed class SettingsModel : ObservableObject
     public bool IsSearching => _query.Trim().Length > 0;
 
     public bool CanGoBack => IsSearching || _history.Count > 0;
+
+    /// <summary>Status tiles of the open page (none while searching).</summary>
+    public IReadOnlyList<SettingItem> Tiles => IsSearching ? Array.Empty<SettingItem>() : _current.Tiles;
+
+    public bool HasTiles => Tiles.Count > 0;
 
     public IReadOnlyList<SettingsSection> VisibleSections
     {
@@ -166,7 +213,7 @@ public sealed class SettingsModel : ObservableObject
     /// <summary>Re-read every row on screen (called on system changes and on a slow tick).</summary>
     public void RefreshVisible()
     {
-        foreach (var item in VisibleSections.SelectMany(s => s.Items))
+        foreach (var item in VisibleSections.SelectMany(s => s.Items).Concat(Tiles))
         {
             item.Refresh();
         }
@@ -197,5 +244,7 @@ public sealed class SettingsModel : ObservableObject
         OnPropertyChanged(nameof(PageDescription));
         OnPropertyChanged(nameof(IsSearching));
         OnPropertyChanged(nameof(CanGoBack));
+        OnPropertyChanged(nameof(Tiles));
+        OnPropertyChanged(nameof(HasTiles));
     }
 }

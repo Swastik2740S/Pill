@@ -14,6 +14,8 @@ public enum SettingKind
     Link,
     /// <summary>A one-off action (clear history, open folder).</summary>
     Action,
+    /// <summary>An editable list of apps (the Home card's quick apps). Payload: QuickAppsModel.</summary>
+    AppList,
 }
 
 /// <summary>One option of a <see cref="SettingKind.Choice"/> row.</summary>
@@ -72,10 +74,14 @@ public sealed class SettingItem : ObservableObject
     public string? LinkKey { get; init; }
     public string ActionLabel { get; init; } = "";
     public Action? Run { get; init; }
+    /// <summary>Model for rows that need more than a value (AppList: the quick apps).</summary>
+    public object? Payload { get; init; }
     /// <summary>Why the control can't act right now (null when it can).</summary>
     public Func<string?>? Unavailable { get; init; }
 
     // Filled in by the catalog.
+    /// <summary>Segoe Fluent glyph shown in the row's icon tile (falls back to the category's).</summary>
+    public string Glyph { get; internal set; } = "";
     public string Category { get; internal set; } = "";
     public string CategoryKey { get; internal set; } = "";
     public string Section { get; internal set; } = "";

@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:views="clr-namespace:DynamicIsland.Views"
              xmlns:controls="clr-namespace:DynamicIsland.Controls"
-             Width="760" Height="520">
+             Width="760" Height="566">
     <!-- The island's Settings: a sidebar of categories, search on top, live controls on the right.
          DataContext is a SettingsModel. Every row reads real state through its SettingItem. -->
     <UserControl.Resources>
@@ -58,19 +58,82 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" CornerRadius="9" Background="Transparent" Padding="10,0">
-                            <ContentPresenter VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            </Grid.RenderTransform>
+                            <Border x:Name="Hover" CornerRadius="9" Background="#12FFFFFF" Opacity="0"/>
+                            <Border x:Name="Selected" CornerRadius="9" Background="#26FFFFFF" Opacity="0"/>
+                            <ContentPresenter Margin="10,0" VerticalAlignment="Center"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#12FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#1AFFFFFF"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#26FFFFFF"/>
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource SelectIn}"/>
+                                </DataTrigger.EnterActions>
+                                <DataTrigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource SelectOut}"/>
+                                </DataTrigger.ExitActions>
                             </DataTrigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressDownSoft}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressUp}"/>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsTabButton" TargetType="Button" BasedOn="{StaticResource TabButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            </Grid.RenderTransform>
+                            <Border x:Name="Hover" CornerRadius="11" Background="#14FFFFFF" Opacity="0"/>
+                            <Border x:Name="Selected" CornerRadius="11" Background="#2EFFFFFF" Opacity="0"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding Card}" Value="Settings">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource SelectIn}"/>
+                                </DataTrigger.EnterActions>
+                                <DataTrigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource SelectOut}"/>
+                                </DataTrigger.ExitActions>
+                            </DataTrigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressDown}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressUp}"/>
+                                </Trigger.ExitActions>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -84,6 +147,7 @@
                     <ControlTemplate TargetType="CheckBox">
                         <Grid Width="42" Height="24" Background="Transparent">
                             <Border x:Name="Track" CornerRadius="12" Background="#38FFFFFF"/>
+                            <Border x:Name="TrackOn" CornerRadius="12" Background="{StaticResource Accent}" Opacity="0"/>
                             <Ellipse x:Name="Knob" Width="18" Height="18" Fill="White" HorizontalAlignment="Left" Margin="3,0,0,0">
                                 <Ellipse.RenderTransform>
                                     <TranslateTransform X="0"/>
@@ -92,7 +156,6 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="#FF30D158"/>
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
@@ -103,6 +166,8 @@
                                                     <BackEase EasingMode="EaseOut" Amplitude="0.3"/>
                                                 </DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="TrackOn" Storyboard.TargetProperty="Opacity"
+                                                             To="1" Duration="0:0:0.18"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -116,6 +181,8 @@
                                                     <CubicEase EasingMode="EaseOut"/>
                                                 </DoubleAnimation.EasingFunction>
                                             </DoubleAnimation>
+                                            <DoubleAnimation Storyboard.TargetName="TrackOn" Storyboard.TargetProperty="Opacity"
+                                                             To="0" Duration="0:0:0.18"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.ExitActions>
@@ -137,17 +204,43 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" CornerRadius="9" Background="#12FFFFFF" Padding="10,5">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            </Grid.RenderTransform>
+                            <Border CornerRadius="9" Background="#12FFFFFF"/>
+                            <Border x:Name="Selected" CornerRadius="9" Background="{StaticResource Accent}" Opacity="0"/>
+                            <Border x:Name="Hover" CornerRadius="9" Background="#12FFFFFF" Opacity="0"/>
+                            <ContentPresenter Margin="10,5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#22FFFFFF"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#F2FFFFFF"/>
-                                <Setter Property="Foreground" Value="#FF000000"/>
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource SelectIn}"/>
+                                </DataTrigger.EnterActions>
+                                <DataTrigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource SelectOut}"/>
+                                </DataTrigger.ExitActions>
                             </DataTrigger>
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                <Setter Property="Foreground" Value="#FFFFFFFF"/>
+                            </DataTrigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressDownSoft}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressUp}"/>
+                                </Trigger.ExitActions>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -156,7 +249,16 @@
 
         <!-- Title, optional note pill, description and "unavailable" reason: shared by every row -->
         <DataTemplate x:Key="RowLabel">
-            <StackPanel VerticalAlignment="Center">
+            <Grid VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Width="26" Height="26" CornerRadius="7" Background="#26FFFFFF" Margin="0,0,12,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="13"
+                               Foreground="{StaticResource PrimaryText}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="{Binding Title}" FontSize="13" Foreground="{StaticResource PrimaryText}"/>
                     <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="6" Background="#1FFFFFFF" VerticalAlignment="Center"
@@ -181,6 +283,7 @@
                     </TextBlock.Style>
                 </TextBlock>
             </StackPanel>
+            </Grid>
         </DataTemplate>
 
         <Style x:Key="RowShell" TargetType="Border">
@@ -253,7 +356,7 @@
                         </Grid.ColumnDefinitions>
                         <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource RowLabel}"/>
                     </Grid>
-                    <ItemsControl ItemsSource="{Binding Choices}" Margin="0,8,0,0" Focusable="False">
+                    <ItemsControl ItemsSource="{Binding Choices}" Margin="38,8,0,0" Focusable="False">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel/>
@@ -315,34 +418,238 @@
             </Border>
         </DataTemplate>
 
+        <!-- Quick apps editor: the Home card's apps, plus a searchable picker of installed apps -->
+        <Style x:Key="PickRowButton" TargetType="Button">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="Root" Background="Transparent" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="1" ScaleY="1"/>
+                            </Grid.RenderTransform>
+                            <Border x:Name="Hover" CornerRadius="8" Background="#1AFFFFFF" Opacity="0"/>
+                            <ContentPresenter Margin="8,0" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverIn}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource HoverOut}"/>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressDownSoft}"/>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard Storyboard="{StaticResource PressUp}"/>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="AppListRow">
+            <Border Style="{StaticResource RowShell}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource RowLabel}"/>
+                        <Button Grid.Column="1" Style="{StaticResource ChipButton}" Content="Add app" Click="AddApp_Click"
+                                Margin="16,0,0,0" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding Payload.Apps}" Margin="38,10,0,0" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Width="78" Margin="0,0,6,6">
+                                    <Button Style="{StaticResource TileButton}" Click="AppReplace_Click" ToolTip="Click to replace">
+                                        <StackPanel Margin="0,8,0,4">
+                                            <Border Width="40" Height="40" CornerRadius="11" Background="{StaticResource SubtleFill}">
+                                                <Image Source="{Binding Icon}" Width="26" Height="26" Stretch="Uniform"
+                                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding Name}" FontSize="11" Margin="0,4,0,0" MaxWidth="70"
+                                                       HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{StaticResource SecondaryText}"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Width="20" Height="20" Margin="2,0,0,0"
+                                            HorizontalAlignment="Left" VerticalAlignment="Top" Click="AppMoveEarlier_Click" ToolTip="Move earlier">
+                                        <TextBlock Text="&#xE76B;" FontFamily="{StaticResource IconFont}" FontSize="8" Foreground="White"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Button>
+                                    <Button Style="{StaticResource CircleButton}" Width="20" Height="20" Margin="0,0,2,0"
+                                            HorizontalAlignment="Right" VerticalAlignment="Top" Click="AppRemove_Click" ToolTip="Remove">
+                                        <Path Data="{StaticResource CloseGeometry}" Stroke="White" StrokeThickness="1.6"
+                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="Uniform" Width="7" Height="7"/>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="{Binding Payload.Message}" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"
+                               Foreground="{StaticResource TimerOrange}"
+                               Visibility="{Binding Payload.HasMessage, Converter={StaticResource BoolToVis}}"/>
+
+                    <Border Margin="0,8,0,0" Padding="8" CornerRadius="10" Background="#14FFFFFF"
+                            Visibility="{Binding Payload.IsPicking, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <Grid Margin="4,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Payload.PickerTitle}" FontSize="12.5" FontWeight="SemiBold"
+                                           Foreground="{StaticResource PrimaryText}" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <Button Grid.Column="1" Style="{StaticResource TextButton}" Content="Cancel" Click="PickCancel_Click"/>
+                            </Grid>
+                            <Border CornerRadius="8" Background="#1AFFFFFF" Padding="10,0" Height="30">
+                                <Grid>
+                                    <TextBlock Text="Search apps" FontSize="13" Foreground="{StaticResource TertiaryText}"
+                                               VerticalAlignment="Center" IsHitTestVisible="False"
+                                               Visibility="{Binding Payload.HasPickerQuery, Converter={StaticResource InvertedBoolToVis}}"/>
+                                    <TextBox Tag="app-picker" Style="{StaticResource SearchBox}"
+                                             Text="{Binding Payload.PickerQuery, UpdateSourceTrigger=PropertyChanged}"
+                                             IsVisibleChanged="PickerSearch_IsVisibleChanged"/>
+                                </Grid>
+                            </Border>
+                            <TextBlock Text="{Binding Payload.PickerStatus}" FontSize="12" Margin="4,8,0,2"
+                                       Foreground="{StaticResource SecondaryText}"
+                                       Visibility="{Binding Payload.HasPickerStatus, Converter={StaticResource BoolToVis}}"/>
+                            <ListBox ItemsSource="{Binding Payload.PickerResults}" Height="210" Margin="0,6,0,0"
+                                     Background="Transparent" BorderThickness="0" Focusable="False"
+                                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                     ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.Template>
+                                    <ControlTemplate TargetType="ListBox">
+                                        <ScrollViewer Focusable="False" CanContentScroll="True"
+                                                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter/>
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ListBox.Template>
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Focusable" Value="False"/>
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter/>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource PickRowButton}" Click="AppPick_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Image Source="{Binding Icon}" Width="20" Height="20" Stretch="Uniform"
+                                                       RenderOptions.BitmapScalingMode="HighQuality" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontSize="12.5" Margin="10,0,0,0"
+                                                           Foreground="{StaticResource PrimaryText}" VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
         <views:SettingRowSelector x:Key="RowSelector"
                                   Info="{StaticResource InfoRow}"
                                   Toggle="{StaticResource ToggleRow}"
                                   Slider="{StaticResource SliderRow}"
                                   Choice="{StaticResource ChoiceRow}"
                                   Link="{StaticResource LinkRow}"
-                                  Action="{StaticResource ActionRow}"/>
+                                  Action="{StaticResource ActionRow}"
+                                  AppList="{StaticResource AppListRow}"/>
     </UserControl.Resources>
 
-    <Grid Margin="18,14,18,16">
+    <Grid Margin="18,12,18,16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="10"/>
             <RowDefinition Height="36"/>
-            <RowDefinition Height="14"/>
+            <RowDefinition Height="12"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
+        <!-- ======================================================== Dashboard tabs stay on top -->
+        <ItemsControl x:Name="Switcher" HorizontalAlignment="Center" Focusable="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Button Style="{StaticResource SettingsTabButton}" Click="Tab_Click" ToolTip="{Binding Label}">
+                        <Grid Width="24" Height="24">
+                            <!-- App icon style: coloured tile, soft gloss, white symbol -->
+                            <Border CornerRadius="7" Background="{Binding Tint}"
+                                    Visibility="{Binding ShowGlyph, Converter={StaticResource BoolToVis}}">
+                                <Grid>
+                                    <Border CornerRadius="7" Background="{StaticResource TabGloss}"/>
+                                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="12.5"
+                                               Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+                            <Image Source="{Binding Icon}" Width="20" Height="20" Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="{Binding ShowIcon, Converter={StaticResource BoolToVis}}"/>
+                            <Border CornerRadius="7" Visibility="{Binding ShowArt, Converter={StaticResource BoolToVis}}">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{Binding Art}" Stretch="UniformToFill"/>
+                                </Border.Background>
+                            </Border>
+                            <Border MinWidth="14" Height="14" CornerRadius="7" Padding="3,0" Background="#FFFF3B30"
+                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-5,-9,0"
+                                    IsHitTestVisible="False"
+                                    Visibility="{Binding HasBadge, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding BadgeText}" FontSize="8.5" FontWeight="Bold" Foreground="White"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"/>
+                            </Border>
+                        </Grid>
+                    </Button>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <!-- ======================================================== Top bar -->
-        <Grid>
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button Style="{StaticResource IconButton}" Width="32" Height="32" Click="Back_Click" ToolTip="Back (Esc)">
-                <TextBlock Text="&#xE72B;" FontFamily="{StaticResource IconFont}" FontSize="13" Foreground="{StaticResource PrimaryText}"/>
-            </Button>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0,0,0">
                 <TextBlock Text="Settings" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource PrimaryText}"
                            VerticalAlignment="Center"/>
                 <TextBlock x:Name="StatusLine" FontSize="12" Margin="14,1,0,0" VerticalAlignment="Center"
@@ -377,7 +684,7 @@
         </Grid>
 
         <!-- ======================================================== Sidebar and page -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="186"/>
                 <ColumnDefinition Width="16"/>
@@ -389,8 +696,10 @@
                     <DataTemplate>
                         <Button Style="{StaticResource SidebarButton}" Click="Category_Click">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="14" Width="18"
-                                           Foreground="{StaticResource PrimaryText}" VerticalAlignment="Center"/>
+                                <Border Width="24" Height="24" CornerRadius="7" Background="{Binding Tint}" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="12.5"
+                                               Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
                                 <TextBlock Text="{Binding Title}" FontSize="13" Margin="10,0,0,0"
                                            Foreground="{StaticResource PrimaryText}" VerticalAlignment="Center"/>
                             </StackPanel>
@@ -404,30 +713,72 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <StackPanel Margin="4,0,0,12">
-                    <TextBlock Text="{Binding PageTitle}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource PrimaryText}"/>
-                    <TextBlock Text="{Binding PageDescription}" FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Foreground="{StaticResource SecondaryText}"/>
-                </StackPanel>
+                <Grid Margin="2,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Width="40" Height="40" CornerRadius="12" Margin="0,0,12,0" VerticalAlignment="Center"
+                            Background="{Binding Current.Tint}"
+                            Visibility="{Binding IsSearching, Converter={StaticResource InvertedBoolToVis}}">
+                        <TextBlock Text="{Binding Current.Glyph}" FontFamily="{StaticResource IconFont}" FontSize="19"
+                                   Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding PageTitle}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource PrimaryText}"/>
+                        <TextBlock Text="{Binding PageDescription}" FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap"
+                                   Foreground="{StaticResource SecondaryText}"/>
+                    </StackPanel>
+                </Grid>
 
                 <ScrollViewer x:Name="PageScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                               Focusable="False" PanningMode="VerticalOnly">
-                    <ItemsControl x:Name="PageSections" ItemsSource="{Binding VisibleSections}" Focusable="False" Margin="0,0,10,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,0,0,14">
-                                    <Button Style="{StaticResource TextButton}" HorizontalAlignment="Left" Margin="-2,0,0,4"
-                                            Click="Section_Click" IsHitTestVisible="{Binding IsSearchResult}">
-                                        <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"/>
-                                    </Button>
-                                    <Border CornerRadius="14" Background="#10FFFFFF" Padding="0,4">
-                                        <ItemsControl ItemsSource="{Binding Items}" Focusable="False"
-                                                      ItemTemplateSelector="{StaticResource RowSelector}"/>
+                    <StackPanel Margin="0,0,10,0">
+                        <!-- Overview: big status tiles -->
+                        <ItemsControl ItemsSource="{Binding Tiles}" Focusable="False" Margin="0,0,-8,0"
+                                      Visibility="{Binding HasTiles, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Rows="1"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,8,14" CornerRadius="14" Background="#17FFFFFF" Padding="12,11" ToolTip="{Binding Value}">
+                                        <StackPanel>
+                                            <Border Width="26" Height="26" CornerRadius="7" Background="#26FFFFFF" HorizontalAlignment="Left">
+                                                <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                                           Foreground="{StaticResource PrimaryText}"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding Title}" FontSize="11.5" Margin="0,10,0,0"
+                                                       Foreground="{StaticResource SecondaryText}"/>
+                                            <TextBlock Text="{Binding Value}" FontSize="15" FontWeight="SemiBold" Margin="0,1,0,0"
+                                                       Foreground="{StaticResource PrimaryText}" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
                                     </Border>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <ItemsControl x:Name="PageSections" ItemsSource="{Binding VisibleSections}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,14">
+                                        <Button Style="{StaticResource TextButton}" HorizontalAlignment="Left" Margin="2,0,0,5"
+                                                Click="Section_Click" IsHitTestVisible="{Binding IsSearchResult}">
+                                            <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource SecondaryText}"/>
+                                        </Button>
+                                        <Border CornerRadius="14" Background="#17FFFFFF" Padding="0,4">
+                                            <ItemsControl ItemsSource="{Binding Items}" Focusable="False"
+                                                          ItemTemplateSelector="{StaticResource RowSelector}"/>
+                                        </Border>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
             </Grid>
         </Grid>

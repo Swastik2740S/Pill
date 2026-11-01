@@ -42,6 +42,12 @@ public sealed class AppSettings
 
     public CoverBehavior WhenCovered { get; set; } = CoverBehavior.TuckAway;
 
+    /// <summary>Apps on the Home card, as AppUserModelIds, in order. Null until first run picks defaults.</summary>
+    public List<string>? QuickApps { get; set; }
+
+    /// <summary>Look for a new release on GitHub at startup and every few hours.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
     public static AppSettings Load()
     {
         try

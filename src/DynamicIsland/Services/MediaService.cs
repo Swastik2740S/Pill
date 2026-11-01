@@ -18,6 +18,15 @@ public sealed class MediaService : ObservableObject, IDisposable
     /// <summary>How long a paused track stays in the compact pill (counted from the moment of pausing).</summary>
     private static readonly TimeSpan PausedLinger = TimeSpan.FromMinutes(2);
 
+    // Skipping a track, many players (YouTube Music, Spotify, browsers) end their media session and
+    // open a new one a few seconds later. Meanwhile the island keeps showing the last track instead
+    // of closing the player or jumping to another app's paused session.
+    private static readonly TimeSpan HoldAfterSkip = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan HoldOtherwise = TimeSpan.FromSeconds(4);
+    private readonly DispatcherTimer _holdTimer;
+    private DateTime _skipUtc = DateTime.MinValue;
+    private DateTime _goneSinceUtc = DateTime.MinValue;
+
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _lingerTimer;
     private readonly List<GlobalSystemMediaTransportControlsSession> _sessions = new();
@@ -71,6 +80,13 @@ public sealed class MediaService : ObservableObject, IDisposable
         {
             _lingerTimer.Stop();
             UpdateActive();
+        };
+
+        _holdTimer = new DispatcherTimer(DispatcherPriority.Background);
+        _holdTimer.Tick += (_, _) =>
+        {
+            _holdTimer.Stop();
+            SelectSession(); // the grace time is over: show whatever is there now
         };
 
         // Browser tabs are looked up a moment after a track settles, to name the site.
@@ -141,6 +157,38 @@ public sealed class MediaService : ObservableObject, IDisposable
 
     public bool HasMultipleSessions => Sessions.Count > 1;
 
+    private IReadOnlyList<MediaSessionInfo> _otherSessions = Array.Empty<MediaSessionInfo>();
+
+    /// <summary>Every player except the one on the main card ("Also playing" rows).</summary>
+    public IReadOnlyList<MediaSessionInfo> OtherSessions => _otherSessions;
+
+    public bool HasOtherSessions => _otherSessions.Count > 0;
+
+    /// <summary>Play or pause a background player without switching the card to it.</summary>
+    public async Task TogglePlayPauseAsync(MediaSessionInfo info)
+    {
+        try
+        {
+            await info.Session.TryTogglePlayPauseAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Play or pause for {info.Source.AppName} failed", ex);
+        }
+    }
+
+    private void UpdateOtherSessions()
+    {
+        var others = Sessions.Where(s => !s.IsSelected).ToList();
+        if (others.SequenceEqual(_otherSessions))
+        {
+            return;
+        }
+        _otherSessions = others;
+        OnPropertyChanged(nameof(OtherSessions));
+        OnPropertyChanged(nameof(HasOtherSessions));
+    }
+
     /// <summary>Show a specific session; it stays until another one starts playing.</summary>
     public void SelectSessionByUser(MediaSessionInfo info)
     {
@@ -199,7 +247,12 @@ public sealed class MediaService : ObservableObject, IDisposable
     {
         try
         {
-            if (_session is { } s) await s.TrySkipNextAsync();
+            _skipUtc = DateTime.UtcNow;
+            if (_session is { } s)
+            {
+                bool ok = await s.TrySkipNextAsync();
+                Log.Info($"Media: skip next sent to {_source.AppName}, accepted={ok} after {(DateTime.UtcNow - _skipUtc).TotalMilliseconds:0} ms");
+            }
         }
         catch (Exception ex)
         {
@@ -211,7 +264,12 @@ public sealed class MediaService : ObservableObject, IDisposable
     {
         try
         {
-            if (_session is { } s) await s.TrySkipPreviousAsync();
+            _skipUtc = DateTime.UtcNow;
+            if (_session is { } s)
+            {
+                bool ok = await s.TrySkipPreviousAsync();
+                Log.Info($"Media: skip previous sent to {_source.AppName}, accepted={ok} after {(DateTime.UtcNow - _skipUtc).TotalMilliseconds:0} ms");
+            }
         }
         catch (Exception ex)
         {
@@ -419,7 +477,52 @@ public sealed class MediaService : ObservableObject, IDisposable
         {
             Log.Warn("Session selection failed", ex);
         }
+
+        if (ShouldHold(pick, out var wait))
+        {
+            _holdTimer.Stop();
+            _holdTimer.Interval = wait;
+            _holdTimer.Start();
+            return;
+        }
+        _holdTimer.Stop();
+        _goneSinceUtc = DateTime.MinValue;
         Apply(pick);
+    }
+
+    /// <summary>
+    /// The session on screen has just disappeared and nothing else is playing: keep the last track
+    /// for a short grace time (longer right after a skip), as the player is most likely switching.
+    /// </summary>
+    private bool ShouldHold(GlobalSystemMediaTransportControlsSession? pick, out TimeSpan wait)
+    {
+        wait = TimeSpan.Zero;
+        bool currentGone = _session is not null && Find(_session) is null;
+        if (!currentGone || _title.Length == 0 || (pick is not null && IsPlayingNow(pick)))
+        {
+            return false;
+        }
+        var now = DateTime.UtcNow;
+        if (_goneSinceUtc == DateTime.MinValue)
+        {
+            _goneSinceUtc = now;
+            Log.Info("Media: session ended, holding the last track while the player switches");
+        }
+        var until = _goneSinceUtc + HoldOtherwise;
+        if (now - _skipUtc < HoldAfterSkip)
+        {
+            var afterSkip = _skipUtc + HoldAfterSkip;
+            if (afterSkip > until)
+            {
+                until = afterSkip;
+            }
+        }
+        wait = until - now;
+        if (wait <= TimeSpan.FromMilliseconds(50))
+        {
+            return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -452,6 +555,7 @@ public sealed class MediaService : ObservableObject, IDisposable
         {
             info.IsSelected = pick is not null && ReferenceEquals(info.Session, pick);
         }
+        UpdateOtherSessions();
 
         if (pick is null)
         {
@@ -496,6 +600,7 @@ public sealed class MediaService : ObservableObject, IDisposable
             Sessions.Add(info);
         }
         OnPropertyChanged(nameof(HasMultipleSessions));
+        UpdateOtherSessions();
     }
 
     private MediaSessionInfo CreateInfo(GlobalSystemMediaTransportControlsSession session)
@@ -681,6 +786,10 @@ public sealed class MediaService : ObservableObject, IDisposable
 
             string title = props.Title ?? "";
             string artist = string.IsNullOrWhiteSpace(props.Artist) ? props.AlbumArtist ?? "" : props.Artist;
+            if (title.Length == 0 && _title.Length > 0 && DateTime.UtcNow - _skipUtc < HoldAfterSkip)
+            {
+                return; // between tracks after a skip: keep the old one until the new one arrives
+            }
             bool trackChanged = title != _title || artist != _artist;
 
             // Music or video, and the service when the media names it (album, artist).
@@ -721,6 +830,10 @@ public sealed class MediaService : ObservableObject, IDisposable
 
             UpdateActive();
 
+            if (trackChanged && title.Length > 0 && DateTime.UtcNow - _skipUtc < HoldAfterSkip)
+            {
+                Log.Info($"Media: new track arrived {(DateTime.UtcNow - _skipUtc).TotalMilliseconds:0} ms after the skip");
+            }
             if (trackChanged && title.Length > 0)
             {
                 if (_hadTrack)
@@ -874,6 +987,7 @@ public sealed class MediaService : ObservableObject, IDisposable
     {
         _lingerTimer.Stop();
         _tabProbeTimer.Stop();
+        _holdTimer.Stop();
         foreach (var s in _sessions)
         {
             Unhook(s);

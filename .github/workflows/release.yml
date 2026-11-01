@@ -54,10 +54,17 @@ jobs:
           }
           Copy-Item installer\Output\*.exe dist\
 
+      - name: Release notes
+        shell: pwsh
+        run: |
+          $notes = "docs\releases\${{ steps.version.outputs.value }}.md"
+          if (Test-Path $notes) { Copy-Item $notes release-notes.md } else { Set-Content release-notes.md '' }
+
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.value }}
           name: Dynamic Island ${{ steps.version.outputs.value }}
+          body_path: release-notes.md
           generate_release_notes: true
           files: dist/*

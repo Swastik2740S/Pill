@@ -118,6 +118,18 @@ public sealed class IslandState
     /// <summary>The expanded island's switcher and its selected card.</summary>
     public Dashboard Dashboard { get; } = new();
 
+    /// <summary>Apps on the Home card, chosen in Settings.</summary>
+    public QuickAppsModel QuickApps { get; } = new();
+
+    /// <summary>Wi-Fi, Bluetooth, sound devices and the rest of the Controls card.</summary>
+    public QuickControls Controls { get; } = new();
+
+    /// <summary>Which apps are using the camera or the microphone right now.</summary>
+    public PrivacyMonitor Privacy { get; } = new();
+
+    /// <summary>New versions from GitHub releases (Settings › Updates).</summary>
+    public UpdateService Updates { get; } = new();
+
     public IslandMode Mode { get; private set; } = IslandMode.Idle;
     public bool IsExpanded => _expanded;
     public bool IsSettingsOpen => _settingsOpen;
@@ -150,6 +162,27 @@ public sealed class IslandState
         PeekGroup = null;
         PeekItem = null;
         Recompute();
+    }
+
+    /// <summary>Open one app's group in the notifications card (others fold up); returns the card's key.</summary>
+    public string FocusNotificationGroup(NotificationGroup? group)
+    {
+        foreach (var g in Notifications.Groups)
+        {
+            g.IsExpanded = ReferenceEquals(g, group);
+        }
+        return Dashboard.NotificationsKey;
+    }
+
+    /// <summary>A tab in Settings' tab row was clicked: leave Settings and show that card.</summary>
+    public void LeaveSettingsTo(string key)
+    {
+        if (key == Dashboard.SettingsKey)
+        {
+            return;
+        }
+        CloseSettings(backToDashboard: true);
+        Dashboard.Select(key);
     }
 
     /// <summary>Leave Settings, either back to the dashboard or all the way to the pill.</summary>
@@ -261,9 +294,15 @@ public sealed class IslandState
         {
             Dashboard.Select(tab);
         }
-        else if (opening)
+        else if (opening && (Dashboard.Selected is null || (Media.HasMedia && Media.IsPlaying)))
         {
+            // While music plays, opening the island always lands on the player.
             Dashboard.Select(Dashboard.DefaultKey(this));
+        }
+        // Otherwise it reopens on the card you left (Sync falls back if that card is gone).
+        if (opening && Dashboard.Selected?.Card == DashboardCard.History)
+        {
+            Dashboard.History = Notifications.LoadHistory(60);
         }
         Recompute();
     }
@@ -277,7 +316,7 @@ public sealed class IslandState
         {
             Dashboard.History = Notifications.LoadHistory(60);
         }
-        else if (Dashboard.Selected?.Card == DashboardCard.App)
+        else if (Dashboard.Selected?.Card is DashboardCard.App or DashboardCard.Notifications)
         {
             Notifications.RefreshTimes();
         }
@@ -303,9 +342,9 @@ public sealed class IslandState
 
     public void Recompute()
     {
-        if (_expanded)
+        if (_expanded || _settingsOpen)
         {
-            Dashboard.Sync(this); // tabs follow live activities while the dashboard is open
+            Dashboard.Sync(this); // tabs follow live activities while the dashboard or Settings is open
         }
         Mode = _settingsOpen ? IslandMode.Settings
             : _expanded ? IslandMode.Expanded
@@ -373,6 +412,11 @@ public sealed class IslandState
             {
                 Dashboard.History = Notifications.LoadHistory(60);
             }
+            return;
+        }
+        if (Controls.DoNotDisturb)
+        {
+            Recompute(); // island do not disturb: it joins the bubbles quietly, no peek
             return;
         }
         PeekGroup = group;

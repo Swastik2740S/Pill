@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:DynamicIsland.Views"
         Title="Dynamic Island"
-        Width="620" Height="470"
+        Width="800" Height="470"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" ShowActivated="False"
         Focusable="False" UseLayoutRounding="False" SnapsToDevicePixels="False"
@@ -61,6 +61,8 @@
                  Solid: plain black, sheen and rim hidden. -->
             <Border x:Name="IslandFill" CornerRadius="15" Background="{StaticResource GlassFill}"/>
             <Border x:Name="IslandSheen" CornerRadius="15" Background="{StaticResource GlassSheen}" IsHitTestVisible="False"/>
+            <!-- Tucked bar: a soft light that fills while the pointer rests on it, just before it opens. -->
+            <Border x:Name="IslandProgress" CornerRadius="15" Background="White" Opacity="0" IsHitTestVisible="False"/>
 
             <!-- Content views have fixed sizes and stay centred; the island's rounded clip reveals them. -->
             <Grid x:Name="ContentHost">
@@ -71,6 +73,30 @@
                 <views:SettingsView x:Name="SettingsPane" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Top"/>
                 <views:TuckedView x:Name="TuckedPane" Visibility="Hidden" HorizontalAlignment="Center" VerticalAlignment="Top"/>
             </Grid>
+
+            <!-- Privacy dots: green while an app uses the camera, orange while one records from the
+                 microphone. They live inside the island at its right end (top-right corner when it is
+                 open); the pill widens a little so they never sit on top of its content.
+                 Placed and sized in ApplyGeometry. -->
+            <StackPanel x:Name="PrivacyDots" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Opacity="0" Visibility="Collapsed" RenderTransformOrigin="0.5,0.5" Background="Transparent"
+                        DataContext="{Binding Privacy}" ToolTip="{Binding Tooltip}">
+                <StackPanel.RenderTransform>
+                    <ScaleTransform x:Name="PrivacyScale" ScaleX="0.3" ScaleY="0.3"/>
+                </StackPanel.RenderTransform>
+                <Ellipse x:Name="CameraDot" Width="6" Height="6" Fill="#FF30D158" VerticalAlignment="Center"
+                         Visibility="{Binding CameraInUse, Converter={StaticResource BoolToVis}}">
+                    <Ellipse.Effect>
+                        <DropShadowEffect Color="#FF30D158" BlurRadius="6" ShadowDepth="0" Opacity="0.75"/>
+                    </Ellipse.Effect>
+                </Ellipse>
+                <Ellipse x:Name="MicDot" Width="6" Height="6" Fill="#FFFF9F0A" VerticalAlignment="Center"
+                         Visibility="{Binding MicInUse, Converter={StaticResource BoolToVis}}">
+                    <Ellipse.Effect>
+                        <DropShadowEffect Color="#FFFF9F0A" BlurRadius="6" ShadowDepth="0" Opacity="0.75"/>
+                    </Ellipse.Effect>
+                </Ellipse>
+            </StackPanel>
 
             <Border x:Name="IslandRim" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource GlassRim}" IsHitTestVisible="False"/>
         </Grid>

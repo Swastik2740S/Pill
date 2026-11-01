@@ -68,13 +68,32 @@ public sealed class NotificationGroup : ObservableObject
     private string _latestLine = "";
     private string _timeText = "";
     private IReadOnlyList<NotificationItem> _topItems = Array.Empty<NotificationItem>();
+    private bool _isExpanded;
+
+    // Messaging apps go under "Conversations" in the notifications card, like One UI.
+    private static readonly string[] ChatApps =
+    {
+        "whatsapp", "telegram", "signal", "messenger", "teams", "slack", "discord", "skype",
+        "phone link", "your phone", "messages", "instagram", "wechat", "viber", "zoom",
+    };
 
     public NotificationGroup(string key, string appId, string appName)
     {
         Key = key;
         AppId = appId;
         AppName = string.IsNullOrWhiteSpace(appName) ? "Notification" : appName;
+        string haystack = $"{AppName} {appId}".ToLowerInvariant();
+        IsConversation = ChatApps.Any(haystack.Contains);
     }
+
+    /// <summary>A messaging app (shown under Conversations).</summary>
+    public bool IsConversation { get; }
+
+    /// <summary>Expanded in the notifications card (its recent messages are listed).</summary>
+    public bool IsExpanded { get => _isExpanded; set => Set(ref _isExpanded, value); }
+
+    /// <summary>More than one message waiting (the count badge shows).</summary>
+    public bool HasMore => _items.Count > 1;
 
     public string Key { get; }
     public string AppId { get; }
@@ -126,6 +145,8 @@ public sealed class NotificationGroup : ObservableObject
         TimeText = latest is null ? "" : TimeLabel.Relative(latest.Time);
         // A new list instance each time, so bound item lists refresh (and times re-render).
         TopItems = _items.Take(NotificationManager.CardItemLimit).ToList();
+        OnPropertyChanged(nameof(Count));
+        OnPropertyChanged(nameof(HasMore));
     }
 }
 

@@ -21,6 +21,8 @@ public sealed class TimerService : ObservableObject
     private readonly DispatcherTimer _tick = new(DispatcherPriority.Normal);
     private readonly Stopwatch _clock = new();
     private TimeSpan _duration;
+    private TimeSpan _offset; // a mirrored stopwatch starts from the time read off the Clock app
+    private bool _isMirrored;
 
     private TimerKind _kind;
     private bool _isRunning;
@@ -34,6 +36,12 @@ public sealed class TimerService : ObservableObject
 
     /// <summary>Raised when a countdown reaches zero, with its original duration.</summary>
     public event Action<TimeSpan>? CountdownFinished;
+
+    /// <summary>The user closed a mirrored Clock stopwatch on the island.</summary>
+    public event Action? MirrorDismissed;
+
+    /// <summary>True while the stopwatch shown is the Windows Clock app's, not the island's own.</summary>
+    public bool IsMirrored { get => _isMirrored; private set => Set(ref _isMirrored, value); }
 
     public TimerKind Kind
     {
@@ -59,6 +67,8 @@ public sealed class TimerService : ObservableObject
     public void StartStopwatch()
     {
         _duration = TimeSpan.Zero;
+        _offset = TimeSpan.Zero;
+        IsMirrored = false;
         Label = "Stopwatch";
         Kind = TimerKind.Stopwatch;
         _clock.Restart();
@@ -72,6 +82,8 @@ public sealed class TimerService : ObservableObject
             return;
         }
         _duration = duration;
+        _offset = TimeSpan.Zero;
+        IsMirrored = false;
         Label = $"{DescribeDuration(duration)} timer";
         Kind = TimerKind.Countdown;
         _clock.Restart();
@@ -94,10 +106,66 @@ public sealed class TimerService : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Show the Windows Clock app's stopwatch: <paramref name="elapsed"/> as read just now, counting
+    /// on by itself while <paramref name="running"/>. The island's own stopwatch or timer, when one
+    /// runs, always wins. Small differences are ignored so the digits never stutter.
+    /// </summary>
+    public void MirrorStopwatch(TimeSpan elapsed, bool running)
+    {
+        if (IsActive && !IsMirrored)
+        {
+            return;
+        }
+        if (IsMirrored && running == IsRunning
+            && Math.Abs((_offset + _clock.Elapsed - elapsed).TotalMilliseconds) < 400)
+        {
+            return;
+        }
+        _duration = TimeSpan.Zero;
+        _offset = elapsed;
+        Label = "Clock stopwatch";
+        IsMirrored = true;
+        Kind = TimerKind.Stopwatch;
+        _clock.Reset();
+        if (running)
+        {
+            Resume();
+        }
+        else
+        {
+            _tick.Stop();
+            IsRunning = false;
+            Update();
+        }
+    }
+
+    /// <summary>The Clock app's stopwatch was reset: stop showing it.</summary>
+    public void EndMirror()
+    {
+        if (IsMirrored)
+        {
+            Stop();
+        }
+    }
+
+    /// <summary>Hide the mirrored stopwatch until it is started again in the Clock app.</summary>
+    public void DismissMirror()
+    {
+        if (!IsMirrored)
+        {
+            return;
+        }
+        Stop();
+        MirrorDismissed?.Invoke();
+    }
+
     public void Stop()
     {
         _tick.Stop();
         _clock.Reset();
+        _offset = TimeSpan.Zero;
+        IsMirrored = false;
         IsRunning = false;
         Kind = TimerKind.None;
         Progress = 0;
@@ -130,11 +198,13 @@ public sealed class TimerService : ObservableObject
         {
             case TimerKind.Stopwatch:
             {
-                var elapsed = _clock.Elapsed;
+                var elapsed = _offset + _clock.Elapsed;
                 CompactText = Short(elapsed);
                 DetailText = Long(elapsed);
                 Progress = elapsed.TotalSeconds % 60 / 60;
-                StateText = IsRunning ? "Running" : "Paused";
+                StateText = IsMirrored
+                    ? (IsRunning ? "Running in the Clock app" : "Paused in the Clock app")
+                    : (IsRunning ? "Running" : "Paused");
                 break;
             }
             case TimerKind.Countdown:

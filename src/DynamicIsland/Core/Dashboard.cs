@@ -7,10 +7,14 @@ namespace DynamicIsland.Core;
 public enum DashboardCard
 {
     Home,
+    /// <summary>Quick controls: Wi-Fi, Bluetooth, sound devices, brightness and more.</summary>
+    Controls,
     Music,
     Timer,
     App,
     History,
+    /// <summary>All waiting notifications, grouped by app: conversations first, then the rest.</summary>
+    Notifications,
     /// <summary>Not a card: the gear tab opens the Settings panel.</summary>
     Settings,
 }
@@ -23,6 +27,7 @@ public sealed class DashboardTab : ObservableObject
     private string _glyph = "";
     private Brush _accent = Palette.White;
     private int _badge;
+    private Brush _tint = Brushes.Gray;
     private string _label = "";
     private bool _isSelected;
 
@@ -68,6 +73,9 @@ public sealed class DashboardTab : ObservableObject
     /// <summary>Segoe Fluent glyph used when there is no image.</summary>
     public string Glyph { get => _glyph; set => Set(ref _glyph, value); }
     public Brush Accent { get => _accent; set => Set(ref _accent, value); }
+
+    /// <summary>The coloured tile behind the tab's symbol, like an app icon.</summary>
+    public Brush Tint { get => _tint; set => Set(ref _tint, value); }
     public string Label { get => _label; set => Set(ref _label, value); }
 
     public int Badge
@@ -107,12 +115,31 @@ public sealed class DashboardTab : ObservableObject
 public sealed class Dashboard : ObservableObject
 {
     public const string HomeKey = "home";
+    public const string ControlsKey = "controls";
     public const string MusicKey = "music";
     public const string TimerKey = "timer";
     public const string HistoryKey = "history";
+    public const string NotificationsKey = "notifications";
     public const string SettingsKey = "settings";
     private const string AppPrefix = "app:";
     private const int MaxAppTabs = 4;
+
+    // App icon style tiles: each tab its own colour, a little lighter at the top.
+    private static readonly Brush HomeTint = Tile("#FF3D9BFF", "#FF0A6CFF");
+    private static readonly Brush ControlsTint = Tile("#FF7A78F0", "#FF4F4CD9");
+    private static readonly Brush MusicTint = Tile("#FFFF5C7A", "#FFE5245A");
+    private static readonly Brush TimerTint = Tile("#FFFFB340", "#FFFF8A00");
+    private static readonly Brush NotificationsTint = Tile("#FFFF6B5E", "#FFE0281C");
+    private static readonly Brush HistoryTint = Tile("#FFCC7BF5", "#FFA445E0");
+    private static readonly Brush SettingsTint = Tile("#FFA1A1A8", "#FF6E6E75");
+
+    private static Brush Tile(string top, string bottom)
+    {
+        var brush = new LinearGradientBrush(
+            (Color)ColorConverter.ConvertFromString(top), (Color)ColorConverter.ConvertFromString(bottom), 90);
+        brush.Freeze();
+        return brush;
+    }
 
     private readonly Dictionary<string, DashboardTab> _cache = new();
     private DashboardTab? _selected;
@@ -137,6 +164,21 @@ public sealed class Dashboard : ObservableObject
 
     public bool HasHistory => _history.Count > 0;
 
+    private IReadOnlyList<NotificationGroup> _conversations = Array.Empty<NotificationGroup>();
+    private IReadOnlyList<NotificationGroup> _otherNotifications = Array.Empty<NotificationGroup>();
+    private string _notificationCountText = "";
+
+    /// <summary>Messaging apps with waiting messages, newest first.</summary>
+    public IReadOnlyList<NotificationGroup> Conversations { get => _conversations; private set => Set(ref _conversations, value); }
+
+    /// <summary>Every other app with waiting notifications, newest first.</summary>
+    public IReadOnlyList<NotificationGroup> OtherNotifications { get => _otherNotifications; private set => Set(ref _otherNotifications, value); }
+
+    public bool HasConversations => _conversations.Count > 0;
+    public bool HasOtherNotifications => _otherNotifications.Count > 0;
+    public bool HasNotifications => HasConversations || HasOtherNotifications;
+    public string NotificationCountText { get => _notificationCountText; private set => Set(ref _notificationCountText, value); }
+
     /// <summary>The user picked another tab (not raised for automatic fallbacks during Sync).</summary>
     public event Action? SelectionChanged;
 
@@ -145,7 +187,7 @@ public sealed class Dashboard : ObservableObject
     /// <summary>Dashboard tab for a bubble's activity id ("media", "notif:...").</summary>
     public static string? KeyForActivity(string activityId) =>
         activityId == "media" ? MusicKey
-        : activityId.StartsWith("notif:", StringComparison.Ordinal) ? AppPrefix + activityId["notif:".Length..]
+        : activityId.StartsWith("notif:", StringComparison.Ordinal) ? NotificationsKey
         : null;
 
     public int IndexOf(DashboardTab? tab) => tab is null ? -1 : Tabs.IndexOf(tab);
@@ -162,6 +204,14 @@ public sealed class Dashboard : ObservableObject
         {
             t.Glyph = "";
             t.Label = "Home";
+            t.Tint = HomeTint;
+        }));
+
+        desired.Add(Tab(ControlsKey, DashboardCard.Controls, t =>
+        {
+            t.Glyph = "\uE9E9";
+            t.Label = "Quick controls";
+            t.Tint = ControlsTint;
         }));
 
         var media = state.Media;
@@ -172,6 +222,7 @@ public sealed class Dashboard : ObservableObject
                 t.Art = media.Artwork;
                 t.Icon = media.AppIcon;
                 t.Glyph = media.IsVideo ? "\uE714" : "\uE8D6";
+                t.Tint = MusicTint;
                 t.Label = string.IsNullOrEmpty(media.Title) ? "Now Playing"
                     : string.IsNullOrEmpty(media.SourceLabel) ? media.Title
                     : $"{media.Title} \u00B7 {media.SourceLabel}";
@@ -186,29 +237,29 @@ public sealed class Dashboard : ObservableObject
                 t.Glyph = "";
                 t.Accent = Palette.Orange;
                 t.Label = timers.Label;
+                t.Tint = TimerTint;
             }));
         }
 
-        foreach (var group in state.Notifications.Groups.Take(MaxAppTabs))
+        // One tab for every notification (One UI style), instead of one tab per app.
+        var groups = state.Notifications.Groups;
+        int waiting = state.Notifications.WaitingCount;
+        desired.Add(Tab(NotificationsKey, DashboardCard.Notifications, t =>
         {
-            var tab = Tab(AppKey(group), DashboardCard.App, t => { }, group);
-            tab.Icon = group.Icon;
-            tab.Glyph = "";
-            tab.Badge = group.Count;
-            tab.Label = group.AppName;
-            desired.Add(tab);
-        }
+            t.Glyph = "\uE7E7";
+            t.Badge = waiting;
+            t.Tint = NotificationsTint;
+            t.Label = waiting == 0 ? "Notifications" : $"Notifications \u00B7 {waiting} waiting";
+        }));
+        SyncFeed(groups.Where(g => g.IsConversation).ToList(), groups.Where(g => !g.IsConversation).ToList(), waiting);
 
         desired.Add(Tab(SettingsKey, DashboardCard.Settings, t =>
         {
             t.Glyph = "\uE713";
-            t.Label = "Settings";
-        }));
-
-        desired.Insert(desired.Count - 1, Tab(HistoryKey, DashboardCard.History, t =>
-        {
-            t.Glyph = "";
-            t.Label = "History";
+            bool update = state.Updates.IsUpdateAvailable;
+            t.Badge = update ? 1 : 0;
+            t.Label = update ? $"Settings \u00B7 version {state.Updates.LatestText} is available" : "Settings";
+            t.Tint = SettingsTint;
         }));
 
         // Apply with moves rather than a reset, so the row doesn't flicker.
@@ -243,6 +294,23 @@ public sealed class Dashboard : ObservableObject
         {
             Select(DefaultKey(state), notify: false);
         }
+    }
+
+    private void SyncFeed(List<NotificationGroup> conversations, List<NotificationGroup> others, int waiting)
+    {
+        // Only swap the lists when they really changed, so open groups don't flicker on every update.
+        if (!conversations.SequenceEqual(_conversations))
+        {
+            Conversations = conversations;
+            OnPropertyChanged(nameof(HasConversations));
+        }
+        if (!others.SequenceEqual(_otherNotifications))
+        {
+            OtherNotifications = others;
+            OnPropertyChanged(nameof(HasOtherNotifications));
+        }
+        OnPropertyChanged(nameof(HasNotifications));
+        NotificationCountText = waiting == 0 ? "" : $"{waiting} waiting";
     }
 
     /// <summary>What to show when the island opens without a specific target.</summary>

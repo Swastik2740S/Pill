@@ -16,6 +16,8 @@ public sealed class SettingsContext
     public required Func<bool> NotificationAccess { get; init; }
     public required Func<CoverBehavior> GetCoverBehavior { get; init; }
     public required Action<CoverBehavior> SetCoverBehavior { get; init; }
+    public required Func<bool> GetAutoUpdate { get; init; }
+    public required Action<bool> SetAutoUpdate { get; init; }
 }
 
 /// <summary>
@@ -38,6 +40,7 @@ public static class SettingsCatalog
         var audio = state.Audio;
         var power = state.Power;
         var notifications = state.Notifications;
+        var updates = state.Updates;
 
         string Battery() => !power.HasBattery ? "No battery (desktop power)"
             : $"{power.Percent}%{(power.IsCharging ? ", charging" : "")}";
@@ -71,7 +74,7 @@ public static class SettingsCatalog
             Keywords = "delete erase privacy data",
         };
 
-        return new List<SettingsCategory>
+        var categories = new List<SettingsCategory>
         {
             new("overview", "Overview", "", "A quick look at this PC right now.", new[]
             {
@@ -85,6 +88,24 @@ public static class SettingsCatalog
                     Info("ov-sound", "Sound", Sound, "volume audio speaker headphones output"),
                     Info("ov-media", "Now playing", NowPlaying, "music video media"),
                     Info("ov-notifications", "Notifications", Waiting, "messages unread")),
+            }, tiles: new[]
+            {
+                new SettingItem("tile-battery", SettingKind.Info, "Battery")
+                {
+                    Read = () => !power.HasBattery ? "Plugged in" : $"{power.Percent}%{(power.IsCharging ? ", charging" : "")}",
+                    Glyph = "\uE83F",
+                },
+                new SettingItem("tile-network", SettingKind.Info, "Network") { Read = () => DeviceInfo.Network, Glyph = "\uE701" },
+                new SettingItem("tile-volume", SettingKind.Info, "Volume")
+                {
+                    Read = () => !audio.HasDevice ? "No device" : audio.IsMuted ? "Muted" : $"{audio.Volume * 100:0}%",
+                    Glyph = "\uE767",
+                },
+                new SettingItem("tile-media", SettingKind.Info, "Now playing")
+                {
+                    Read = () => !media.HasMedia ? "Nothing playing" : media.Title,
+                    Glyph = "\uE8D6",
+                },
             }),
 
             new("connectivity", "Connectivity", "", "Network, Wi-Fi, Bluetooth and more.", new[]
@@ -195,7 +216,7 @@ public static class SettingsCatalog
                     new SettingItem("per-cover", SettingKind.Choice, "When a window is under the island")
                     {
                         Description = "Tuck away turns the island into a thin line that lets clicks through to your tabs. "
-                            + "Hold the pointer at the top edge for a moment, or press the shortcut, to bring it back.",
+                            + "Rest the pointer on the line for a moment, or press the shortcut, to bring it back.",
                         Options = new[] { "Tuck away", "Stay on top" },
                         GetChoice = () => ctx.GetCoverBehavior() == CoverBehavior.TuckAway ? 0 : 1,
                         SetChoice = i =>
@@ -204,6 +225,14 @@ public static class SettingsCatalog
                             return null;
                         },
                         Keywords = "browser tabs hide overlap covers auto hide maximized fullscreen title bar",
+                    }),
+                Section("Home",
+                    new SettingItem("per-quick-apps", SettingKind.AppList, "Quick apps")
+                    {
+                        Description = $"Shown on the island's Home card, {QuickAppsModel.MinApps} to {QuickAppsModel.MaxApps} apps. "
+                            + "Click an app to replace it, \u00D7 removes it, \u2039 moves it earlier.",
+                        Payload = state.QuickApps,
+                        Keywords = "launcher shortcuts dock pinned favourite favorite apps home tiles",
                     }),
             }),
 
@@ -229,6 +258,9 @@ public static class SettingsCatalog
 
             new("privacy", "Privacy & security", "", "Permissions and your data.", new[]
             {
+                Section("Right now",
+                    Info("prv-camera-now", "Camera", () => state.Privacy.CameraStatus, "webcam in use recording indicator green"),
+                    Info("prv-mic-now", "Microphone", () => state.Privacy.MicStatus, "mic in use recording indicator orange")),
                 Section("Permissions",
                     Info("prv-notifications", "Notification access", Access, "permission"),
                     Info("prv-location", "Location", () => "Not used. Nearby Wi-Fi networks stay off.", "gps"),
@@ -262,6 +294,45 @@ public static class SettingsCatalog
                     Info("acc-keys", "In Settings", () => "Type to search. Esc goes back or closes. Ctrl+Up and Ctrl+Down switch pages.", "keyboard navigation")),
             }),
 
+            new("updates", "Updates", "\uE777", "New versions of Dynamic Island from GitHub.", new[]
+            {
+                Section("Dynamic Island",
+                    Info("upd-version", "Installed version", () => updates.CurrentText, "version about"),
+                    Info("upd-status", "Status", () => updates.StatusText, "update new version latest"),
+                    new SettingItem("upd-install", SettingKind.Action, "Download and install")
+                    {
+                        Description = "Gets the installer from GitHub and restarts the island on the new version. Your settings stay.",
+                        ActionLabel = "Install",
+                        Run = () => _ = updates.DownloadAndInstallAsync(),
+                        Unavailable = () => updates.InstallUnavailable,
+                        Keywords = "update upgrade download new version",
+                    },
+                    new SettingItem("upd-check", SettingKind.Action, "Check for updates")
+                    {
+                        Description = "Asks GitHub for the latest release.",
+                        ActionLabel = "Check now",
+                        Run = () => _ = updates.CheckAsync(manual: true),
+                        Unavailable = () => updates.IsBusy ? "Busy…" : null,
+                        Keywords = "update refresh latest",
+                    },
+                    Info("upd-notes", "What's new", () => updates.Notes.Length > 0 ? updates.Notes : "Shown after a check", "release notes changelog"),
+                    new SettingItem("upd-page", SettingKind.Action, "Release page")
+                    {
+                        Description = "Every version, with its notes and downloads.",
+                        ActionLabel = "Open",
+                        Run = updates.OpenReleasePage,
+                        Keywords = "github changelog download",
+                    }),
+                Section("Automatic",
+                    new SettingItem("upd-auto", SettingKind.Toggle, "Check automatically")
+                    {
+                        Description = "Looks for a new version when the island starts and every 6 hours, and tells you in the island. Nothing installs without your click.",
+                        GetOn = ctx.GetAutoUpdate,
+                        SetOn = ctx.SetAutoUpdate,
+                        Keywords = "update automatic notify",
+                    }),
+            }),
+
             new("system", "System", "", "This PC and the island.", new[]
             {
                 Section("Device",
@@ -286,5 +357,44 @@ public static class SettingsCatalog
                     }),
             }),
         };
+
+        // An icon for every row; rows not listed use their category's icon.
+        foreach (var item in categories.SelectMany(c => c.Sections).SelectMany(s => s.Items))
+        {
+            if (RowGlyphs.TryGetValue(item.Id, out string? glyph))
+            {
+                item.Glyph = glyph;
+            }
+        }
+        return categories;
     }
+
+    private static readonly Dictionary<string, string> RowGlyphs = new()
+    {
+        ["upd-version"] = "\uE946", ["upd-status"] = "\uE895", ["upd-install"] = "\uE896", ["upd-check"] = "\uE72C",
+        ["upd-notes"] = "\uE8A5", ["upd-page"] = "\uE774", ["upd-auto"] = "\uE823",
+        ["ov-device"] = "", ["ov-windows"] = "", ["ov-uptime"] = "", ["ov-network"] = "",
+        ["ov-battery"] = "", ["ov-sound"] = "", ["ov-media"] = "", ["ov-notifications"] = "",
+        ["net-connection"] = "", ["net-wifi"] = "", ["net-join"] = "", ["bt-settings"] = "",
+        ["net-airplane"] = "", ["net-hotspot"] = "", ["net-vpn"] = "",
+        ["snd-volume"] = "", ["snd-mute"] = "", ["snd-device"] = "", ["snd-devices"] = "", ["snd-apps"] = "",
+        ["dsp-mode"] = "", ["dsp-monitors"] = "", ["dsp-settings"] = "", ["dsp-night"] = "",
+        ["dsp-colors"] = "", ["dsp-wallpaper"] = "",
+        ["pwr-level"] = "", ["pwr-health"] = "", ["pwr-draw"] = "", ["pwr-saver"] = "",
+        ["pwr-saver-link"] = "", ["pwr-sleep"] = "",
+        ["ntf-access"] = "", ["ntf-waiting"] = "", ["ntf-history"] = "", ["ntf-windows"] = "",
+        ["ntf-dnd"] = "", ["clear-history"] = "",
+        ["per-style"] = "", ["per-shortcut"] = "", ["per-open"] = "", ["per-cover"] = "",
+        ["per-quick-apps"] = "",
+        ["app-sources"] = "", ["app-tabs"] = "", ["app-whatsapp"] = "", ["app-gmail"] = "",
+        ["app-autostart"] = "", ["app-startup"] = "",
+        ["prv-camera-now"] = "\uE714", ["prv-mic-now"] = "\uE720",
+        ["prv-notifications"] = "", ["prv-location"] = "", ["prv-camera"] = "", ["prv-mic"] = "",
+        ["prv-location-link"] = "", ["prv-history"] = "", ["prv-accounts"] = "", ["prv-folder"] = "",
+        ["acc-text"] = "", ["acc-motion"] = "", ["acc-contrast"] = "", ["acc-text-link"] = "",
+        ["acc-motion-link"] = "", ["acc-contrast-link"] = "", ["acc-shortcut"] = "", ["acc-keys"] = "",
+        ["sys-name"] = "", ["sys-windows"] = "", ["sys-cpu"] = "", ["sys-threads"] = "",
+        ["sys-memory"] = "", ["sys-gpu"] = "", ["sys-storage"] = "", ["sys-uptime"] = "",
+        ["sys-network"] = "", ["sys-about"] = "", ["sys-version"] = "", ["sys-log"] = "",
+    };
 }
